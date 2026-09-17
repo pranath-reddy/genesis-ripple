@@ -132,6 +132,7 @@ rsp_token.txt
 .venv-agent/
 .uv-cache-agent/
 /configs/local/
+/local_inputs/
 /DeepLense-AI-Scientist/
 /vendor/slsim/
 /vendor/JAXtronomy/

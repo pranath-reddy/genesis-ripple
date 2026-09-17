@@ -12,7 +12,12 @@ from pydantic import ValidationError
 
 from .client import Dp2Client
 from .errors import Dp2AuthenticationError, Dp2ConfigurationError, Dp2Error
-from .models import Dp2ClientConfig, Dp2CutoutRequest, SecurityEvidence
+from .models import (
+    DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND,
+    Dp2ClientConfig,
+    Dp2CutoutRequest,
+    SecurityEvidence,
+)
 from .package_models import Dp2PackageFailureEvidence
 from .package_service import Dp2PackageService, write_package_model_json_atomic
 from .service import create_private_run_directory
@@ -21,10 +26,16 @@ from .service import create_private_run_directory
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Retrieve the fixed Rubin DP2 deep-coadd masked image and construct "
+            "Retrieve one typed g/r/i Rubin DP2 deep-coadd masked image and construct "
             "the immutable RIPPLe M2 cutout package. Authentication is read only "
             "from RSP_TOKEN."
         )
+    )
+    parser.add_argument(
+        "--band",
+        choices=tuple(DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND),
+        default="r",
+        help="Rubin LSSTCam band selected by its pinned effective wavelength.",
     )
     parser.add_argument(
         "--output-root",
@@ -89,7 +100,10 @@ def _write_failure_safely(
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    request = Dp2CutoutRequest(soda_service_type="cutout-sync-maskedimage")
+    request = Dp2CutoutRequest(
+        band_name=args.band,
+        soda_service_type="cutout-sync-maskedimage",
+    )
     token_present = bool(os.environ.get("RSP_TOKEN", "").strip())
 
     try:

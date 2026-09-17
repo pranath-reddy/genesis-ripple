@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from types import MappingProxyType
+from typing import Any, Final, Literal
 
 from pydantic import (
     BaseModel,
@@ -23,6 +26,31 @@ SodaServiceType = Literal[
     "cutout-sync-exposure",
 ]
 ComponentState = Literal["present", "absent", "unknown"]
+Dp2Band = Literal["g", "r", "i"]
+
+# Rubin LSSTCam effective wavelengths, in metres.  SIA2 BAND accepts a scalar
+# wavelength and returns datasets whose spectral coverage contains that point.
+# Authority: https://lsstcam.lsst.io/ (LSSTCam filter table).
+DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND: Final[Mapping[Dp2Band, float]] = MappingProxyType(
+    {
+        "g": 4.807e-7,
+        "r": 6.221e-7,
+        "i": 7.559e-7,
+    }
+)
+
+# Rubin's DP2 SIA tutorial publishes these recommended LSST band edges.  They
+# are retained as an executable guard against an accidental selector mismatch.
+# Authority: https://dp2.lsst.io/tutorials/notebook/103/notebook-103-2.html
+DP2_SIA_BAND_EDGES_M_BY_BAND: Final[Mapping[Dp2Band, tuple[float, float]]] = (
+    MappingProxyType(
+        {
+            "g": (4.026e-7, 5.483e-7),
+            "r": (5.510e-7, 6.891e-7),
+            "i": (6.936e-7, 8.188e-7),
+        }
+    )
+)
 
 _SAFE_REMOTE_TEXT_PATTERN = re.compile(r"^[\x20-\x7e]+$")
 _FORBIDDEN_EVIDENCE_FRAGMENTS = (
@@ -116,12 +144,12 @@ class Dp2CutoutRequest(_ImmutableModel):
     dec_deg: float = Field(default=-27.7404715, ge=-90, le=90)
     search_radius_deg: float = Field(default=0.01, gt=0, le=1)
     cutout_radius_deg: float = Field(default=0.01, gt=0, le=0.25)
-    effective_wavelength_m: Literal[6.221e-7] = 6.221e-7
+    effective_wavelength_m: float = Field(default=6.221e-7, gt=0.0)
     time_start_mjd_tai: float | None = Field(default=None, gt=0)
     time_end_mjd_tai: float | None = Field(default=None, gt=0)
     calibration_level: Literal[3] = 3
     product_subtype: Literal["lsst.deep_coadd"] = "lsst.deep_coadd"
-    band_name: Literal["r"] = "r"
+    band_name: Dp2Band = "r"
     expected_collection: Literal["LSST.DP2"] = "LSST.DP2"
     expected_obs_id: Literal["lsst_cells_v2-5063-34"] = "lsst_cells_v2-5063-34"
     expected_skymap: Literal["lsst_cells_v2"] = "lsst_cells_v2"
@@ -129,8 +157,39 @@ class Dp2CutoutRequest(_ImmutableModel):
     expected_patch: Literal[34] = 34
     soda_service_type: SodaServiceType = "cutout-sync"
 
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_authoritative_wavelength(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        fields = dict(value)
+        band = fields.get("band_name", "r")
+        if (
+            "effective_wavelength_m" not in fields
+            and isinstance(band, str)
+            and band in DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND
+        ):
+            fields["effective_wavelength_m"] = DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND[band]
+        return fields
+
     @model_validator(mode="after")
     def _validate_ranges(self) -> "Dp2CutoutRequest":
+        expected_wavelength = DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND[self.band_name]
+        if not math.isclose(
+            self.effective_wavelength_m,
+            expected_wavelength,
+            rel_tol=0.0,
+            abs_tol=1e-15,
+        ):
+            raise ValueError(
+                "effective_wavelength_m must equal the authoritative LSSTCam value "
+                "for band_name"
+            )
+        band_min, band_max = DP2_SIA_BAND_EDGES_M_BY_BAND[self.band_name]
+        if not band_min < self.effective_wavelength_m < band_max:
+            raise ValueError(
+                "the authoritative effective wavelength is outside the DP2 SIA band edges"
+            )
         if (self.time_start_mjd_tai is None) != (self.time_end_mjd_tai is None):
             raise ValueError("both time bounds must be provided together")
         if (
@@ -173,7 +232,7 @@ class DatasetIdentity(_ImmutableModel):
     wavelength_max_m: float | None = None
     tract: Literal[5063]
     patch: Literal[34]
-    band_name: Literal["r"]
+    band_name: Dp2Band
     access_format: Literal["application/x-votable+xml;content=datalink"]
 
     @field_validator(
@@ -251,7 +310,7 @@ class WcsEvidence(_ImmutableModel):
 class FitsIdentityEvidence(_ImmutableModel):
     butler_uuid: str = Field(min_length=32, max_length=64, pattern=r"^[0-9a-f]+$")
     dataset_type: Literal["deep_coadd"]
-    band_name: Literal["r"]
+    band_name: Dp2Band
     skymap: Literal["lsst_cells_v2"]
     tract: Literal[5063]
     patch: Literal[34]

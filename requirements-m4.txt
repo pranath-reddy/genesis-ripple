@@ -1,0 +1,6 @@
+# Exact local runtime used for the recovered checkpoint integration path.
+# The concrete inference graph consumes exported e2cnn filter buffers, so e2cnn
+# is not a runtime dependency.
+numpy==2.2.6
+pydantic==2.13.5
+torch==2.8.0

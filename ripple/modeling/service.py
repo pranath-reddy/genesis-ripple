@@ -31,9 +31,9 @@ from .adapters import (
 from .contracts import ModelManifest, ModelManifestRef
 from .manifest_io import load_builtin_manifests, load_model_manifest
 from .mriganka_adapter import Mriganka64Adapter
+from .mriganka_enn_adapter import MrigankaEnnThreeBandAdapter
 from .observation import ObservationBundle, load_observation_bundle
 from .registry import ModelAdapterRegistry, UnknownRegistrationError
-
 
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 _IDENTIFIER_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{2,127}$"
@@ -128,6 +128,7 @@ def build_default_registry() -> ModelAdapterRegistry:
 
     registry = ModelAdapterRegistry()
     registry.register_adapter(Mriganka64Adapter())
+    registry.register_adapter(MrigankaEnnThreeBandAdapter())
     for manifest in load_builtin_manifests():
         registry.register_manifest(manifest)
     registry.freeze()

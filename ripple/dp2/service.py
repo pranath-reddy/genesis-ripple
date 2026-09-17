@@ -28,9 +28,9 @@ from .errors import Dp2ConfigurationError, Dp2FitsValidationError
 from .models import (
     ComponentEvidence,
     DatasetIdentity,
+    DownloadEvidence,
     Dp2CutoutRequest,
     Dp2SmokeEvidence,
-    DownloadEvidence,
     FailureEvidence,
     FitsEvidence,
     FitsIdentityEvidence,
@@ -682,7 +682,7 @@ def _fits_identity(
     return FitsIdentityEvidence(
         butler_uuid=butler_uuid,
         dataset_type="deep_coadd",
-        band_name="r",
+        band_name=band,
         skymap="lsst_cells_v2",
         tract=5063,
         patch=34,

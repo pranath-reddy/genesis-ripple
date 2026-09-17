@@ -12,7 +12,6 @@ from pydantic import ValidationError
 
 from .contracts import ModelManifest, ModelManifestRef
 
-
 _MAX_MANIFEST_BYTES = 2 * 1024 * 1024
 
 
@@ -135,7 +134,10 @@ def builtin_manifest_paths() -> tuple[Path, ...]:
     """Return the explicit built-in manifest allowlist in stable order."""
 
     directory = Path(__file__).with_name("manifests")
-    return (directory / "mriganka-domain-adaptation.provisional.v1.json",)
+    return (
+        directory / "mriganka-domain-adaptation.provisional.v1.json",
+        directory / "mriganka-enn-three-band-dp2.provisional.v1.json",
+    )
 
 
 def load_builtin_manifests() -> tuple[ModelManifest, ...]:

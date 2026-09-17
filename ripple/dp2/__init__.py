@@ -6,12 +6,22 @@ dependency.  DP2 retrieval requires only an RSP token supplied through
 """
 
 from .client import Dp2Client
-from .models import Dp2ClientConfig, Dp2CutoutRequest, Dp2SmokeEvidence
+from .models import (
+    DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND,
+    DP2_SIA_BAND_EDGES_M_BY_BAND,
+    Dp2Band,
+    Dp2ClientConfig,
+    Dp2CutoutRequest,
+    Dp2SmokeEvidence,
+)
 from .package_models import Dp2CutoutPackage
 from .package_service import Dp2PackageService, LoadedDp2Cutout, load_cutout_package
 from .service import Dp2SmokeService
 
 __all__ = [
+    "DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND",
+    "DP2_SIA_BAND_EDGES_M_BY_BAND",
+    "Dp2Band",
     "Dp2Client",
     "Dp2ClientConfig",
     "Dp2CutoutPackage",

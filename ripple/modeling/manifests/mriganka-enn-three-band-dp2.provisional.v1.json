@@ -1,0 +1,412 @@
+{
+  "schema_version": "ripple.model-manifest.v1",
+  "manifest_id": "mriganka-enn-three-band-dp2-provisional-v1",
+  "model_id": "deeplense.mriganka.enn-sda",
+  "model_version": "sda-epoch-20-iteration-0-dp2-provisional-v1",
+  "display_name": "Mriganka ENN SDA three-band Rubin DP2 adapter (provisional)",
+  "created_at_utc": "2026-09-17T00:00:00Z",
+  "implementation": {
+    "framework": "pytorch",
+    "source_locator": "https://github.com/astrofyz/sda_deeplense",
+    "source_revision": "d5f245c7e169436b83c4ab83e451ad29e52689cb",
+    "source_sha256": null,
+    "architecture_entrypoint": "model.Equivariant_Network plus model.Classifier",
+    "checkpoint_locator": null,
+    "checkpoint_sha256": null
+  },
+  "observation": {
+    "accepted_product_kinds": [
+      "rubin_dp2_deep_coadd_masked_image"
+    ],
+    "required_bands": [
+      "g",
+      "r",
+      "i"
+    ],
+    "optional_bands": [],
+    "required_components": {
+      "image": true,
+      "mask": "required",
+      "variance": "required",
+      "celestial_wcs": "required",
+      "psf": "optional",
+      "photometric_calibration": "required"
+    },
+    "accepted_image_units": [
+      "nJy"
+    ],
+    "pixel_scale_arcsec": null,
+    "field_of_view_arcsec": null,
+    "band_alignment": "common_pixel_grid_required",
+    "missing_band_policy": "reject",
+    "domain_notes": [
+      "Rubin DP2 g/r/i planes are selected by configured band name, but their mapping to the serialized HSC channel axis is not authoritatively established.",
+      "The adapter accepts only native-grid 64 by 64 crops that agree pairwise within 1e-7 arcsec at thirteen sampled crop locations; it performs no reprojection.",
+      "The native Rubin angular field, missing packaged PSF payloads, and HSC-to-Rubin domain compatibility remain unresolved."
+    ]
+  },
+  "preprocessing": {
+    "adapter_id": "mriganka-enn-native64-three-band",
+    "adapter_version": "v1",
+    "recipe_id": "mriganka-enn-dp2-native64-three-band-minmax-v1",
+    "steps": [
+      {
+        "order": 0,
+        "operation": "verify-observation",
+        "implementation_id": "ripple-verify-three-m2-v1",
+        "parameters": {
+          "package_count": 3,
+          "product_kind": "rubin_dp2_deep_coadd_masked_image",
+          "image_unit": "nJy",
+          "variance_unit": "nJy2",
+          "components": [
+            "image",
+            "mask",
+            "variance",
+            "celestial_wcs",
+            "photometric_calibration"
+          ]
+        },
+        "evidence_claim_ids": [
+          "ripple-three-band-recipe-direct"
+        ]
+      },
+      {
+        "order": 1,
+        "operation": "select-channels-by-band",
+        "implementation_id": "ripple-select-gri-by-band-v1",
+        "parameters": {
+          "channel_bands": [
+            "g",
+            "r",
+            "i"
+          ],
+          "physical_band_mapping_status": "configured_unverified",
+          "input_path_order": "ignored",
+          "additional_bands": "reject"
+        },
+        "evidence_claim_ids": [
+          "configured-channel-order-unresolved",
+          "ripple-three-band-recipe-direct"
+        ]
+      },
+      {
+        "order": 2,
+        "operation": "native-wcs-center-crop",
+        "implementation_id": "ripple-native-wcs-center-crop-v1",
+        "parameters": {
+          "shape_yx": [
+            64,
+            64
+          ],
+          "centering": "nearest-native-pixel-window-around-requested-wcs-coordinate",
+          "resampling": "none",
+          "orientation_change": "none",
+          "background_operation": "none",
+          "field_of_view_policy": "native-64px-no-resampling-technical-only"
+        },
+        "evidence_claim_ids": [
+          "upstream-center-crop-direct",
+          "angular-field-policy-unresolved",
+          "ripple-three-band-recipe-direct"
+        ]
+      },
+      {
+        "order": 3,
+        "operation": "validate-band-crops",
+        "implementation_id": "ripple-validate-gri-crops-v1",
+        "parameters": {
+          "image_finite_required": true,
+          "variance_positive_finite_required": true,
+          "mask_schema_exact": true,
+          "fatal_bits": [
+            "NO_DATA",
+            "SATURATED"
+          ],
+          "caution_bits": [
+            "INTERPOLATED",
+            "COSMIC_RAY",
+            "DETECTION_EDGE",
+            "CLIPPED",
+            "REJECTED",
+            "INEXACT_PSF"
+          ],
+          "retained_bits": [
+            "DETECTED"
+          ],
+          "maximum_fatal_fraction": 0.0
+        },
+        "evidence_claim_ids": [
+          "ripple-three-band-recipe-direct",
+          "psf-domain-policy-unresolved"
+        ]
+      },
+      {
+        "order": 4,
+        "operation": "validate-common-native-grid",
+        "implementation_id": "ripple-validate-common-native-grid-v1",
+        "parameters": {
+          "comparison": "pairwise-sky-separation-at-common-crop-relative-pixels",
+          "pixel_center_grid_xy": [
+            0.0,
+            31.5,
+            63.0
+          ],
+          "include_half_pixel_footprint_corners": true,
+          "sample_count_per_pair": 13,
+          "maximum_separation_arcsec": 1e-7,
+          "mismatch_policy": "fail",
+          "reprojection": "forbidden"
+        },
+        "evidence_claim_ids": [
+          "ripple-three-band-recipe-direct",
+          "angular-field-policy-unresolved"
+        ]
+      },
+      {
+        "order": 5,
+        "operation": "channel-minmax-normalize",
+        "implementation_id": "mriganka-upstream-channel-minmax-nan-to-num-v1",
+        "parameters": {
+          "scope": "each-channel-y-x",
+          "operation_order": [
+            "subtract-minimum",
+            "divide-shifted-maximum",
+            "nan-to-num-zero"
+          ],
+          "output_min": 0.0,
+          "output_max": 1.0,
+          "positive_dynamic_range_required": true
+        },
+        "evidence_claim_ids": [
+          "upstream-channel-normalization-direct"
+        ]
+      },
+      {
+        "order": 6,
+        "operation": "build-tensor",
+        "implementation_id": "ripple-bchw-three-channel-float32-v1",
+        "parameters": {
+          "axes": [
+            "batch",
+            "channel",
+            "y",
+            "x"
+          ],
+          "shape": [
+            1,
+            3,
+            64,
+            64
+          ],
+          "dtype": "float32"
+        },
+        "evidence_claim_ids": [
+          "upstream-three-channel-model-direct",
+          "ripple-three-band-recipe-direct"
+        ]
+      }
+    ],
+    "inference_augmentation": "none"
+  },
+  "tensor": {
+    "axes": [
+      "batch",
+      "channel",
+      "y",
+      "x"
+    ],
+    "shape": [
+      1,
+      3,
+      64,
+      64
+    ],
+    "dtype": "float32",
+    "unit": "dimensionless",
+    "channel_semantics": [
+      "configured g band at channel 0; HSC serialized mapping unresolved",
+      "configured r band at channel 1; HSC serialized mapping unresolved",
+      "configured i band at channel 2; HSC serialized mapping unresolved"
+    ],
+    "value_range": [
+      0.0,
+      1.0
+    ]
+  },
+  "output": {
+    "task": "binary_lens_classification",
+    "raw_output": "logits",
+    "labels": [
+      "non_lens",
+      "lens"
+    ],
+    "score_is_calibrated_probability": false,
+    "decision_threshold": null
+  },
+  "evidence_sources": [
+    {
+      "source_id": "upstream-mriganka-reader",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "Pinned upstream Mriganka data reader and evaluation crop",
+      "locator": "https://github.com/astrofyz/sda_deeplense/blob/d5f245c7e169436b83c4ab83e451ad29e52689cb/read_module.py",
+      "revision": "d5f245c7e169436b83c4ab83e451ad29e52689cb",
+      "sha256": "4e7ea32fb187e58dcbf59946351ce9e27b51c64e90a76dc151fb2603cec62d2d",
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    },
+    {
+      "source_id": "upstream-mriganka-preprocess",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "Pinned upstream Mriganka loading and channel normalization",
+      "locator": "https://github.com/astrofyz/sda_deeplense/blob/d5f245c7e169436b83c4ab83e451ad29e52689cb/preprocess_module.py",
+      "revision": "d5f245c7e169436b83c4ab83e451ad29e52689cb",
+      "sha256": "377335dceec171b7d24da03247c5af8edce04437e660d542c6b1e16cbeb53291",
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    },
+    {
+      "source_id": "upstream-mriganka-model",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "Pinned upstream three-channel ENN and two-logit classifier",
+      "locator": "https://github.com/astrofyz/sda_deeplense/blob/d5f245c7e169436b83c4ab83e451ad29e52689cb/model.py",
+      "revision": "d5f245c7e169436b83c4ab83e451ad29e52689cb",
+      "sha256": "c904ba2171467ba6c93a56688e5a92a274b3ebbf1f5832258966208a0c485ce8",
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    },
+    {
+      "source_id": "ripple-three-band-adapter",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "RIPPLe isolated three-band native-grid adapter",
+      "locator": "ripple/modeling/mriganka_enn_adapter.py",
+      "revision": "mriganka-enn-native64-three-band-v1",
+      "sha256": null,
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    },
+    {
+      "source_id": "mriganka-methods-paper",
+      "kind": "primary_literature",
+      "authority": "published_methods_evidence",
+      "title": "Domain adaptation for strong gravitational lens finding in HSC",
+      "locator": "https://arxiv.org/abs/2410.01203",
+      "revision": null,
+      "sha256": null,
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    }
+  ],
+  "evidence_claims": [
+    {
+      "claim_id": "upstream-center-crop-direct",
+      "field_path": "preprocessing.steps",
+      "value_summary": "The pinned evaluation transform applies CenterCrop(64) before preprocessing.",
+      "source_ids": [
+        "upstream-mriganka-reader"
+      ],
+      "support": "direct",
+      "review_required": false,
+      "notes": "This establishes the pixel crop size, not Rubin angular-field compatibility."
+    },
+    {
+      "claim_id": "upstream-channel-normalization-direct",
+      "field_path": "preprocessing.steps",
+      "value_summary": "The pinned upstream transform independently subtracts each channel minimum over y and x, divides by that channel's shifted maximum, and replaces nonfinite values with zero.",
+      "source_ids": [
+        "upstream-mriganka-preprocess",
+        "upstream-mriganka-reader"
+      ],
+      "support": "direct",
+      "review_required": false,
+      "notes": null
+    },
+    {
+      "claim_id": "upstream-three-channel-model-direct",
+      "field_path": "tensor.shape",
+      "value_summary": "The pinned ENN constructs its input field type from three trivial representations, establishing a three-channel model input.",
+      "source_ids": [
+        "upstream-mriganka-model"
+      ],
+      "support": "direct",
+      "review_required": false,
+      "notes": null
+    },
+    {
+      "claim_id": "configured-channel-order-unresolved",
+      "field_path": "tensor.channel_semantics",
+      "value_summary": "The RIPPLe adapter is configured as g, r, i, but reviewed executable sources do not authoritatively map the serialized HSC channel axis to physical bands.",
+      "source_ids": [
+        "upstream-mriganka-reader",
+        "upstream-mriganka-preprocess",
+        "mriganka-methods-paper"
+      ],
+      "support": "unresolved",
+      "review_required": true,
+      "notes": "Configured order is a technical wiring choice, not a scientific mapping claim."
+    },
+    {
+      "claim_id": "ripple-three-band-recipe-direct",
+      "field_path": "preprocessing.recipe_id",
+      "value_summary": "The reviewed RIPPLe adapter implements exactly three verified band packages, band-based channel selection, independent native crops, strict mask and variance checks, pairwise WCS validation, and BCHW publication.",
+      "source_ids": [
+        "ripple-three-band-adapter"
+      ],
+      "support": "direct",
+      "review_required": true,
+      "notes": "This establishes local technical behavior only."
+    },
+    {
+      "claim_id": "angular-field-policy-unresolved",
+      "field_path": "observation.field_of_view_arcsec",
+      "value_summary": "The required mapping between the HSC training angular field and a Rubin native 64-pixel crop, including any permitted resampling, remains unresolved.",
+      "source_ids": [
+        "upstream-mriganka-reader",
+        "mriganka-methods-paper",
+        "ripple-three-band-adapter"
+      ],
+      "support": "unresolved",
+      "review_required": true,
+      "notes": null
+    },
+    {
+      "claim_id": "psf-domain-policy-unresolved",
+      "field_path": "observation.required_components",
+      "value_summary": "No approved PSF-matching policy or demonstrated HSC-to-Rubin domain compatibility supports scientific use of the native Rubin crops.",
+      "source_ids": [
+        "upstream-mriganka-model",
+        "mriganka-methods-paper",
+        "ripple-three-band-adapter"
+      ],
+      "support": "unresolved",
+      "review_required": true,
+      "notes": null
+    },
+    {
+      "claim_id": "calibration-threshold-unresolved",
+      "field_path": "output.score_is_calibrated_probability",
+      "value_summary": "No Rubin calibration evidence or candidate-selection threshold has been established for this model route.",
+      "source_ids": [
+        "upstream-mriganka-model",
+        "mriganka-methods-paper"
+      ],
+      "support": "unresolved",
+      "review_required": true,
+      "notes": "Raw technical model scores must not be described as calibrated probabilities or candidate decisions."
+    }
+  ],
+  "qualification": {
+    "state": "preprocessing_preview_only",
+    "preprocessing_execution_allowed": true,
+    "model_execution_allowed": false,
+    "scientific_use_allowed": false,
+    "unresolved_requirements": [
+      "physical channel order authority",
+      "angular field and resampling policy",
+      "PSF matching policy",
+      "HSC-to-Rubin domain compatibility",
+      "score calibration",
+      "candidate threshold"
+    ],
+    "approval_record": null
+  }
+}

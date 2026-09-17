@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from .client import Dp2Client
 from .errors import Dp2AuthenticationError, Dp2ConfigurationError, Dp2Error
 from .models import (
+    DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND,
     Dp2ClientConfig,
     Dp2CutoutRequest,
     FailureEvidence,
@@ -28,7 +29,7 @@ from .service import (
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Retrieve and verify the single documented Rubin DP2 deep-coadd "
+            "Retrieve and verify one typed g/r/i Rubin DP2 deep-coadd "
             "smoke cutout. Authentication is read only from RSP_TOKEN."
         )
     )
@@ -37,6 +38,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("outputs/dp2_smoke"),
         help="Ignored local root for FITS and sanitized evidence artifacts.",
+    )
+    parser.add_argument(
+        "--band",
+        choices=tuple(DP2_EFFECTIVE_WAVELENGTH_M_BY_BAND),
+        default="r",
+        help="Rubin LSSTCam band selected by its pinned effective wavelength.",
     )
     parser.add_argument(
         "--service-type",
@@ -100,7 +107,10 @@ def _write_failure_safely(
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    request = Dp2CutoutRequest(soda_service_type=args.service_type)
+    request = Dp2CutoutRequest(
+        band_name=args.band,
+        soda_service_type=args.service_type,
+    )
     token_present = bool(os.environ.get("RSP_TOKEN", "").strip())
 
     try:

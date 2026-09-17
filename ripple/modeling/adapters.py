@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .contracts import ModelManifest, ModelManifestRef
 
-
 _IDENTIFIER_PATTERN = r"^[a-z0-9][a-z0-9._-]{2,127}$"
 _VERSION_PATTERN = r"^[a-z0-9][a-z0-9._-]{0,63}$"
 _FIELD_PATH_PATTERN = r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$"
@@ -278,24 +277,46 @@ class PreprocessingRunEnvelope(_ImmutableAdapterModel, Generic[PackageT]):
         if self.compatibility.adapter != self.adapter:
             raise ValueError("compatibility and run adapter identities disagree")
         source = getattr(self.package, "source", None)
-        if source is not None and all(
-            hasattr(source, field)
-            for field in (
+        sources = getattr(self.package, "sources", None)
+        if source is not None and sources is not None:
+            raise ValueError(
+                "an adapter package cannot declare both source and sources"
+            )
+        provenance = (source,) if source is not None else sources
+        if provenance is not None:
+            if not isinstance(provenance, tuple) or not provenance:
+                raise ValueError(
+                    "adapter package source provenance must be a non-empty tuple"
+                )
+            required_fields = (
                 "run_relative_manifest_path",
                 "manifest_sha256",
                 "fits_sha256",
                 "band",
                 "dataset_id",
             )
-        ):
-            expected_input = VerifiedInputPackageRef(
-                run_relative_manifest_path=source.run_relative_manifest_path,
-                manifest_sha256=source.manifest_sha256,
-                fits_sha256=source.fits_sha256,
-                band=source.band,
-                dataset_id=source.dataset_id,
+            if not all(
+                all(hasattr(item, field) for field in required_fields)
+                for item in provenance
+            ):
+                raise ValueError("adapter package source provenance is incomplete")
+            expected_inputs = tuple(
+                VerifiedInputPackageRef(
+                    run_relative_manifest_path=item.run_relative_manifest_path,
+                    manifest_sha256=item.manifest_sha256,
+                    fits_sha256=item.fits_sha256,
+                    band=item.band,
+                    dataset_id=item.dataset_id,
+                )
+                for item in provenance
             )
-            if self.invocation.inputs != (expected_input,):
+            if source is not None:
+                matches_invocation = self.invocation.inputs == expected_inputs
+            else:
+                matches_invocation = tuple(
+                    sorted(self.invocation.inputs, key=lambda item: item.band)
+                ) == tuple(sorted(expected_inputs, key=lambda item: item.band))
+            if not matches_invocation:
                 raise ValueError(
                     "invocation inputs do not match the adapter package source provenance"
                 )
