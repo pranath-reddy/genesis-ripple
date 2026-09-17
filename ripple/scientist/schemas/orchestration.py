@@ -2,32 +2,67 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 
 from pydantic import Field, TypeAdapter, field_validator, model_validator
 
 from .common import (
+    IDENTIFIER_PATTERN,
+    SHA256_PATTERN,
     ArtifactRef,
     BudgetUsage,
     ComputeBudget,
     FrozenModel,
-    IDENTIFIER_PATTERN,
-    SHA256_PATTERN,
     ScientificGate,
     SkyCoordinate,
 )
-from .repository import RepositorySource
 from .remote import RemoteWorkerSettings
+from .repository import RepositorySource
 
 
 class MrigankaDp2Request(FrozenModel):
+    schema_version: Literal["ripple.mriganka-dp2-request.v2"] = (
+        "ripple.mriganka-dp2-request.v2"
+    )
     branch: Literal["mriganka_dp2"] = "mriganka_dp2"
     request_id: str = Field(pattern=IDENTIFIER_PATTERN)
-    observation_package: str = Field(min_length=1, max_length=1024)
+    bands: tuple[Literal["g"], Literal["r"], Literal["i"]] = ("g", "r", "i")
     model_manifest: str = Field(min_length=1, max_length=1024)
+    inference_bundle_manifest: str = Field(min_length=1, max_length=1024)
+    checkpoint_root: str = Field(min_length=1, max_length=1024)
     target: SkyCoordinate
-    budget: ComputeBudget = ComputeBudget()
+    budget: ComputeBudget = ComputeBudget(
+        max_gpu_seconds=0,
+        max_llm_requests=0,
+        max_simulations=0,
+        max_storage_bytes=256 * 1024**2,
+        max_tool_calls=7,
+        max_training_runs=0,
+    )
+
+    @model_validator(mode="after")
+    def _proven_dp2_target_only(self) -> MrigankaDp2Request:
+        if not (
+            math.isclose(
+                self.target.ra_deg,
+                53.1246023,
+                rel_tol=0.0,
+                abs_tol=1e-10,
+            )
+            and math.isclose(
+                self.target.dec_deg,
+                -27.7404715,
+                rel_tol=0.0,
+                abs_tol=1e-10,
+            )
+        ):
+            raise ValueError(
+                "the known-model route is limited to its independently verified "
+                "DP2 target until the pinned dataset-cell contract is generalized"
+            )
+        return self
 
 
 class ResearcherModelRequest(FrozenModel):
@@ -86,7 +121,7 @@ class SimulationTrainingRequest(FrozenModel):
     budget: ComputeBudget = ComputeBudget()
 
     @model_validator(mode="after")
-    def _safe_remote_worker(self) -> "SimulationTrainingRequest":
+    def _safe_remote_worker(self) -> SimulationTrainingRequest:
         RemoteWorkerSettings(
             host=self.gpu_host,
             python=self.gpu_python,
@@ -96,7 +131,7 @@ class SimulationTrainingRequest(FrozenModel):
 
 
 PipelineRunRequest = Annotated[
-    Union[MrigankaDp2Request, ResearcherModelRequest, SimulationTrainingRequest],
+    MrigankaDp2Request | ResearcherModelRequest | SimulationTrainingRequest,
     Field(discriminator="branch"),
 ]
 PIPELINE_REQUEST_ADAPTER = TypeAdapter(PipelineRunRequest)
@@ -121,7 +156,7 @@ class DecisionRecord(FrozenModel):
         return value
 
     @model_validator(mode="after")
-    def _selected_is_allowed(self) -> "DecisionRecord":
+    def _selected_is_allowed(self) -> DecisionRecord:
         if self.selected_action not in self.allowed_actions:
             raise ValueError("agent selected an action outside the allowlist")
         return self
@@ -156,7 +191,7 @@ class RunState(FrozenModel):
     next_allowed_actions: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def _validate_state(self) -> "RunState":
+    def _validate_state(self) -> RunState:
         if not self.usage.fits(self.budget):
             raise ValueError("recorded usage exceeds the run budget")
         if self.status == "blocked" and not self.blockers:
@@ -201,7 +236,7 @@ class ToolOutcome(FrozenModel):
     usage_delta: BudgetUsage = BudgetUsage()
 
     @model_validator(mode="after")
-    def _terminal_shape(self) -> "ToolOutcome":
+    def _terminal_shape(self) -> ToolOutcome:
         if self.status == "blocked" and not self.blockers:
             raise ValueError("a blocked tool outcome must record a blocker")
         if (

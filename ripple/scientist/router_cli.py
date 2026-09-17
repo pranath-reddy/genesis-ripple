@@ -6,8 +6,8 @@ import argparse
 import asyncio
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .router import (
     RouteDispatchError,
@@ -24,7 +24,14 @@ def _parser() -> argparse.ArgumentParser:
         command = commands.add_parser(name)
         command.add_argument("--request", type=Path, required=True)
         command.add_argument("--simulation-configuration", type=Path)
-        command.add_argument("--preprocessing-output-root", type=Path)
+        command.add_argument(
+            "--preprocessing-output-root",
+            type=Path,
+            help=(
+                "Known-model route output root for the complete DP2 g/r/i, M3, "
+                "bridge, M4, technical-report, and completion artifact tree."
+            ),
+        )
         command.add_argument("--researcher-output-root", type=Path)
         command.add_argument("--repository-root", type=Path)
         if name == "run":
@@ -74,7 +81,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = _parser().parse_args(argv)
     try:
         return asyncio.run(_main_async(arguments))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - keep CLI failures sanitized
         print(
             json.dumps(
                 {

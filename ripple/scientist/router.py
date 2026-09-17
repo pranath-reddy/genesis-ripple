@@ -1,7 +1,8 @@
 """Bounded dispatcher for the three RIPPLe research routes.
 
 The dispatcher owns routing only.  Scientific work remains in registered,
-typed implementations: the DP2/Mriganka path may verify and preprocess, the
+typed implementations: the DP2/Mriganka path may retrieve, preprocess, bridge,
+and run its explicitly unqualified technical classifier integration; the
 researcher path may inspect an immutable source snapshot and answer an explicit
 analysis goal, and the synthetic path delegates to the existing campaign
 runner.  This module has no generic Python execution facility and never invokes
@@ -14,33 +15,36 @@ import asyncio
 import hashlib
 import math
 import os
-import shutil
 import stat
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
-from ripple.dp2.package_service import load_cutout_package
+from ripple.dp2.client import Dp2Client
+from ripple.dp2.errors import Dp2Error
+from ripple.dp2.models import Dp2ClientConfig, Dp2CutoutRequest
+from ripple.dp2.package_service import (
+    Dp2PackageService,
+    LoadedDp2Cutout,
+    load_cutout_package,
+)
+from ripple.dp2.service import create_private_run_directory
 from ripple.modeling.contracts import ModelManifestRef
 from ripple.modeling.manifest_io import load_model_manifest
 from ripple.modeling.service import (
     build_default_registry,
     run_registered_preprocessing,
 )
-from ripple.preprocessing.contracts import MrigankaModelInputPackage
+from ripple.preprocessing.mriganka_enn.contracts import (
+    MrigankaEnnThreeBandModelInputPackage,
+)
 
 from .artifacts import ArtifactStore, sha256_file
 from .paths import checked_absolute_path, checked_real_directory, checked_real_file
 from .schemas.campaign import SimulationCampaignConfiguration
-from .schemas.common import canonical_json_sha256, utc_now
-from .schemas.repository import (
-    RepositoryIntakeManifest,
-    RepositoryIntakePolicy,
-    RepositoryIntakeRequest,
-)
+from .schemas.common import BudgetUsage, canonical_json_sha256, utc_now
 from .schemas.orchestration import (
     PIPELINE_REQUEST_ADAPTER,
     MrigankaDp2Request,
@@ -48,20 +52,36 @@ from .schemas.orchestration import (
     ResearcherModelRequest,
     SimulationTrainingRequest,
 )
+from .schemas.report import MrigankaDp2TechnicalReport
+from .schemas.repository import (
+    RepositoryIntakeManifest,
+    RepositoryIntakePolicy,
+    RepositoryIntakeRequest,
+)
 from .schemas.routes import (
+    MrigankaBridgeResult,
+    MrigankaDp2BandResult,
+    MrigankaDp2RouteCompletion,
     MrigankaDp2RouteResult,
+    MrigankaM3Result,
+    MrigankaM4Result,
+    MrigankaRouteArtifactRef,
     PipelineRouteResult,
     ResearcherModelRouteResult,
     RoutePlan,
     SimulationTrainingRouteResult,
 )
 
-
 _MAX_REQUEST_BYTES = 2 * 1024 * 1024
 _MAX_CAMPAIGN_CONFIGURATION_BYTES = 2 * 1024 * 1024
 _MIB = 1024 * 1024
-_MRIGANKA_TOOL_CALLS = 1
-_MRIGANKA_FIXED_OUTPUT_RESERVATION_BYTES = 48 * _MIB
+_MRIGANKA_TOOL_CALLS = 7
+_MRIGANKA_M2_STAGE_RESERVATION_BYTES = 66 * _MIB
+_MRIGANKA_M3_FIXED_RESERVATION_BYTES = 54 * _MIB
+_MRIGANKA_BRIDGE_STAGE_RESERVATION_BYTES = 12 * _MIB
+_MRIGANKA_M4_STAGE_RESERVATION_BYTES = 16 * _MIB
+_MRIGANKA_MINIMUM_STORAGE_BYTES = _MRIGANKA_M2_STAGE_RESERVATION_BYTES
+_MRIGANKA_MAX_ARTIFACT_BYTES = 2 * 1024**3
 _RESEARCHER_FIXED_TOOL_CALLS = 1
 _RESEARCHER_MIN_AGENT_TOOL_CALLS = 8
 _RESEARCHER_ARTIFACT_RESERVATION_BYTES = 16 * _MIB
@@ -206,109 +226,124 @@ def _stable_file_identity(details: os.stat_result) -> tuple[int, ...]:
     )
 
 
-def _copy_verified_file_bounded(
-    source: Path,
-    destination: Path,
-    *,
-    expected_bytes: int,
-    expected_sha256: str,
-) -> None:
-    """Copy exactly one verified regular file without exceeding its byte bound."""
-
-    if expected_bytes < 1:
-        raise RouteDispatchError(
-            code="invalid_m2_snapshot_bound",
-            message="The verified M2 component has an invalid byte bound.",
-        )
-    try:
-        source = checked_real_file(source)
-        parent = checked_real_directory(destination.parent)
-    except ValueError:
-        raise RouteDispatchError(
-            code="unsafe_m2_snapshot_path",
-            message="The verified M2 component could not be snapshotted safely.",
-        ) from None
-    destination = parent / destination.name
-    source_descriptor: int | None = None
-    destination_descriptor: int | None = None
-    published = False
-    try:
-        before = os.lstat(source)
-        source_descriptor = os.open(
-            source,
-            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
-        )
-        opened = os.fstat(source_descriptor)
-        if _stable_file_identity(before) != _stable_file_identity(opened):
-            raise RouteDispatchError(
-                code="m2_source_changed_before_snapshot",
-                message="The M2 input changed before its bounded snapshot was created.",
-            )
-        destination_descriptor = os.open(
-            destination,
-            os.O_WRONLY
-            | os.O_CREAT
-            | os.O_EXCL
-            | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NOFOLLOW", 0),
-            0o600,
-        )
-        digest = hashlib.sha256()
-        byte_count = 0
-        while byte_count < expected_bytes:
-            chunk = os.read(
-                source_descriptor,
-                min(1024 * 1024, expected_bytes - byte_count),
-            )
-            if not chunk:
-                break
-            digest.update(chunk)
-            byte_count += len(chunk)
-            view = memoryview(chunk)
-            while view:
-                written = os.write(destination_descriptor, view)
-                view = view[written:]
-        grew_beyond_bound = bool(os.read(source_descriptor, 1))
-        os.fsync(destination_descriptor)
-        after = os.fstat(source_descriptor)
-        if _stable_file_identity(opened) != _stable_file_identity(after):
-            raise RouteDispatchError(
-                code="m2_source_changed_during_snapshot",
-                message="The M2 input changed while its bounded snapshot was created.",
-            )
-        if (
-            grew_beyond_bound
-            or byte_count != expected_bytes
-            or digest.hexdigest() != expected_sha256
-        ):
-            raise RouteDispatchError(
-                code="m2_source_snapshot_mismatch",
-                message="The bounded M2 snapshot did not match its verified identity.",
-            )
-        os.fchmod(destination_descriptor, 0o400)
-        published = True
-    except RouteDispatchError:
-        raise
-    except (FileExistsError, OSError) as exc:
-        raise RouteDispatchError(
-            code="m2_source_snapshot_failed",
-            message=f"The bounded M2 snapshot failed ({type(exc).__name__}).",
-        ) from None
-    finally:
-        if destination_descriptor is not None:
-            os.close(destination_descriptor)
-        if source_descriptor is not None:
-            os.close(source_descriptor)
-        if not published and os.path.lexists(destination):
-            destination.unlink()
-
-
 def _declared_file(value: str, *, base_directory: Path, label: str) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
         path = base_directory / path
     _bounded_regular_file(path, maximum_bytes=64 * 1024 * 1024, label=label)
     return checked_real_file(path)
+
+
+def _mriganka_declared_path(value: str, *, base_directory: Path) -> Path:
+    """Lexically resolve a request-relative known-route path without following links."""
+
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = base_directory / path
+    # The shipped request intentionally walks from configs/scientist back to the
+    # repository root. Collapse that traversal lexically, then let checked_real_*
+    # reject every symlink component and require the final on-disk type.
+    return Path(os.path.normpath(os.fspath(path.absolute())))
+
+
+def _declared_mriganka_file(
+    value: str,
+    *,
+    base_directory: Path,
+    label: str,
+) -> Path:
+    path = _mriganka_declared_path(value, base_directory=base_directory)
+    _bounded_regular_file(path, maximum_bytes=64 * 1024 * 1024, label=label)
+    return checked_real_file(path)
+
+
+def _declared_mriganka_directory(
+    value: str,
+    *,
+    base_directory: Path,
+    label: str,
+) -> Path:
+    path = _mriganka_declared_path(value, base_directory=base_directory)
+    try:
+        return checked_real_directory(path)
+    except ValueError:
+        raise RouteDispatchError(
+            code=f"{label}_not_found",
+            message=f"The required {label.replace('_', ' ')} directory is unavailable.",
+        ) from None
+
+
+def _mriganka_artifact_ref(path: Path) -> MrigankaRouteArtifactRef:
+    descriptor: int | None = None
+    try:
+        candidate = checked_real_file(path)
+        before = os.lstat(candidate)
+        descriptor = os.open(
+            candidate,
+            os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
+        opened = os.fstat(descriptor)
+        if _stable_file_identity(before) != _stable_file_identity(opened):
+            raise OSError("artifact identity changed before hashing")
+        digest = hashlib.sha256()
+        byte_count = 0
+        while chunk := os.read(descriptor, 1024 * 1024):
+            byte_count += len(chunk)
+            if byte_count > _MRIGANKA_MAX_ARTIFACT_BYTES:
+                raise OSError("artifact exceeded its route reference bound")
+            digest.update(chunk)
+        after = os.fstat(descriptor)
+        path_after = os.lstat(candidate)
+        if (
+            _stable_file_identity(opened) != _stable_file_identity(after)
+            or _stable_file_identity(after) != _stable_file_identity(path_after)
+            or byte_count != after.st_size
+        ):
+            raise OSError("artifact identity changed while hashing")
+    except (OSError, ValueError):
+        raise RouteDispatchError(
+            code="mriganka_artifact_unavailable",
+            message="A required known-route artifact is unavailable or unsafe.",
+        ) from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return MrigankaRouteArtifactRef(
+        path=str(candidate),
+        byte_count=byte_count,
+        sha256=digest.hexdigest(),
+    )
+
+
+def _enforce_mriganka_storage_budget(
+    run_directory: Path,
+    *,
+    maximum_storage_bytes: int,
+) -> None:
+    if _directory_bytes(run_directory) > maximum_storage_bytes:
+        raise RouteDispatchError(
+            code="mriganka_storage_budget_exhausted",
+            message="The known-model route exceeded its caller-owned storage budget.",
+        )
+
+
+def _reserve_mriganka_stage_storage(
+    run_directory: Path,
+    *,
+    maximum_storage_bytes: int,
+    additional_bytes: int,
+    stage: str,
+) -> None:
+    """Refuse a stage before writing unless its contract maximum fits."""
+
+    if _directory_bytes(run_directory) + additional_bytes > maximum_storage_bytes:
+        raise RouteDispatchError(
+            code=f"mriganka_{stage}_storage_reservation_failed",
+            message=(
+                "The remaining route storage budget cannot cover the next stage's "
+                "contract maximum."
+            ),
+        )
 
 
 def load_pipeline_request(path: Path) -> PipelineRunRequest:
@@ -350,20 +385,34 @@ def plan_pipeline_route(
         )
         lenscat_policy = "not_applicable_synthetic_without_coordinates"
     elif isinstance(request, MrigankaDp2Request):
-        required = ("preprocessing_output_root",)
-        missing_items = [] if preprocessing_output_root is not None else list(required)
+        required = ("preprocessing_output_root", "RSP_TOKEN")
+        missing_items: list[str] = []
+        if preprocessing_output_root is None:
+            missing_items.append("preprocessing_output_root")
+        if not os.environ.get("RSP_TOKEN"):
+            missing_items.append("RSP_TOKEN")
         if request.budget.max_tool_calls < _MRIGANKA_TOOL_CALLS:
-            missing_items.append("request_budget.max_tool_calls>=1")
+            missing_items.append(
+                f"request_budget.max_tool_calls>={_MRIGANKA_TOOL_CALLS}"
+            )
+        if request.budget.max_storage_bytes < _MRIGANKA_MINIMUM_STORAGE_BYTES:
+            missing_items.append(
+                f"request_budget.max_storage_bytes>={_MRIGANKA_MINIMUM_STORAGE_BYTES}"
+            )
         missing = tuple(missing_items)
         stages = (
-            "reload_and_verify_existing_m2_package",
+            "retrieve_and_verify_real_dp2_gri_packages",
             "resolve_exact_registered_model_manifest",
-            "run_registered_deterministic_preprocessing",
-            "enforce_classifier_execution_gate",
+            "run_registered_three_band_preprocessing",
+            "run_audited_m3_to_m4_bridge",
+            "run_unqualified_dp2_technical_inference",
+            "assemble_non_candidate_technical_report",
+            "publish_route_completion_last",
         )
         boundary = (
-            "No classifier is run when its manifest gate is closed; without a real "
-            "candidate score there is no report and LensCat is not invoked."
+            "The classifier output is an uncalibrated technical integration score, "
+            "not a probability or candidate decision; scientific use and LensCat "
+            "remain blocked."
         )
         lenscat_policy = "final_only_after_real_candidate_evidence"
     else:
@@ -562,156 +611,467 @@ def _run_mriganka_route(
     if request.budget.max_tool_calls < _MRIGANKA_TOOL_CALLS:
         raise RouteDispatchError(
             code="mriganka_budget_too_small",
-            message="Mriganka preprocessing requires one approved tool call.",
+            message=(
+                "The complete Mriganka technical route requires seven approved "
+                "deterministic tool calls."
+            ),
         )
-    observation_path = _declared_file(
-        request.observation_package,
-        base_directory=request_base_directory,
-        label="observation_package",
-    )
-    manifest_path = _declared_file(
+    if request.budget.max_storage_bytes < _MRIGANKA_MINIMUM_STORAGE_BYTES:
+        raise RouteDispatchError(
+            code="mriganka_storage_budget_too_small",
+            message=(
+                "The storage budget is below the fixed per-stage reservation "
+                "required by the known-model route."
+            ),
+        )
+
+    manifest_path = _declared_mriganka_file(
         request.model_manifest,
         base_directory=request_base_directory,
         label="model_manifest",
     )
-
-    loaded = load_cutout_package(observation_path)
-    manifest_bytes = _bounded_regular_file(
-        observation_path,
-        maximum_bytes=2 * _MIB,
-        label="observation_package",
+    inference_manifest_path = _declared_mriganka_file(
+        request.inference_bundle_manifest,
+        base_directory=request_base_directory,
+        label="inference_bundle_manifest",
     )
-    required_storage_bytes = (
-        2 * (loaded.package.artifact.byte_count + len(manifest_bytes))
-        + _MRIGANKA_FIXED_OUTPUT_RESERVATION_BYTES
+    checkpoint_root = _declared_mriganka_directory(
+        request.checkpoint_root,
+        base_directory=request_base_directory,
+        label="checkpoint_root",
     )
-    if request.budget.max_storage_bytes < required_storage_bytes:
-        raise RouteDispatchError(
-            code="mriganka_storage_budget_too_small",
-            message=(
-                "The storage budget cannot cover the verified M2 copy and the "
-                "bounded M3 artifact contract."
-            ),
-        )
-    if not (
-        math.isclose(
-            float(loaded.package.request.ra_deg),
-            request.target.ra_deg,
-            rel_tol=0.0,
-            abs_tol=1e-10,
-        )
-        and math.isclose(
-            float(loaded.package.request.dec_deg),
-            request.target.dec_deg,
-            rel_tol=0.0,
-            abs_tol=1e-10,
-        )
-    ):
-        raise RouteDispatchError(
-            code="mriganka_target_mismatch",
-            message="The verified M2 package describes a different sky coordinate.",
-        )
 
     manifest = load_model_manifest(manifest_path)
     reference = ModelManifestRef.from_manifest(manifest)
     registry = build_default_registry()
     resolved = registry.inspect(reference)
-    preprocessing_root = checked_real_directory(output_root, create=True)
-    snapshot_root = Path(
-        tempfile.mkdtemp(prefix=".mriganka-input-", dir=preprocessing_root)
+    expected_registration = (
+        "mriganka-enn-three-band-dp2-provisional-v1",
+        "deeplense.mriganka.enn-sda",
+        "mriganka-enn-native64-three-band",
+        "v1",
     )
-    snapshot_root.chmod(0o700)
-    snapshot_manifest = snapshot_root / "package.json"
-    snapshot_fits = snapshot_root / loaded.package.artifact.filename
+    observed_registration = (
+        resolved.manifest.manifest_id,
+        resolved.manifest.model_id,
+        resolved.adapter_identity.adapter_id,
+        resolved.adapter_identity.adapter_version,
+    )
+    if observed_registration != expected_registration:
+        raise RouteDispatchError(
+            code="mriganka_three_band_manifest_required",
+            message=(
+                "The known-model route requires the exact registered three-band "
+                "Mriganka preprocessing manifest."
+            ),
+        )
+    if not resolved.manifest.qualification.preprocessing_execution_allowed:
+        raise RouteDispatchError(
+            code="mriganka_preprocessing_gate_closed",
+            message="The registered manifest does not authorize preprocessing.",
+        )
+
+    # Keep the heavyweight checkpoint runtime out of import-only planning paths.
+    from ripple.inference.m3_bridge import run_m3_to_m4_bridge
+    from ripple.inference.service import (
+        builtin_bundle_manifest_path,
+        load_bundle_manifest,
+        run_m4_inference,
+    )
+
+    bundle_manifest = load_bundle_manifest(inference_manifest_path)
+    builtin_bundle = load_bundle_manifest(builtin_bundle_manifest_path())
+    if bundle_manifest != builtin_bundle:
+        raise RouteDispatchError(
+            code="mriganka_exact_inference_bundle_required",
+            message=(
+                "The known-model route requires the exact pinned Mriganka ENN "
+                "checkpoint-bundle manifest."
+            ),
+        )
+
+    route_run_directory = checked_real_directory(
+        create_private_run_directory(Path(output_root))
+    )
+    route_run_id = f"mriganka-{uuid.uuid4().hex[:12]}"
+    route_store = ArtifactStore(route_run_directory, create=False)
+
     try:
-        _copy_verified_file_bounded(
-            observation_path,
-            snapshot_manifest,
-            expected_bytes=len(manifest_bytes),
-            expected_sha256=hashlib.sha256(manifest_bytes).hexdigest(),
+        client = Dp2Client.from_environment(Dp2ClientConfig())
+        m2_service = Dp2PackageService(client)
+    except Dp2Error as exc:
+        raise RouteDispatchError(
+            code=f"mriganka_m2_{exc.code}",
+            message="The authenticated Rubin DP2 client could not be initialized.",
+        ) from None
+
+    m2_runs: list[tuple[str, Path, LoadedDp2Cutout]] = []
+    for band in request.bands:
+        _reserve_mriganka_stage_storage(
+            route_run_directory,
+            maximum_storage_bytes=request.budget.max_storage_bytes,
+            additional_bytes=_MRIGANKA_M2_STAGE_RESERVATION_BYTES,
+            stage=f"m2_{band}",
         )
-        _copy_verified_file_bounded(
-            observation_path.parent / loaded.package.artifact.filename,
-            snapshot_fits,
-            expected_bytes=loaded.package.artifact.byte_count,
-            expected_sha256=loaded.package.artifact.sha256,
-        )
-        snapshotted = load_cutout_package(snapshot_manifest)
-        if snapshotted.package != loaded.package:
-            raise RouteDispatchError(
-                code="m2_source_changed_before_snapshot",
-                message="The M2 input changed before its bounded snapshot was created.",
+        try:
+            m2_run_directory = checked_real_directory(
+                create_private_run_directory(route_run_directory / "m2" / band)
             )
-        completed = run_registered_preprocessing(
-            registry=registry,
-            manifest_id=manifest.manifest_id,
-            package_paths=snapshot_manifest,
-            output_root=preprocessing_root,
-            require_aligned_shapes=False,
-            invocation_interface="agent_tool",
+            package = m2_service.run(
+                Dp2CutoutRequest(
+                    ra_deg=request.target.ra_deg,
+                    dec_deg=request.target.dec_deg,
+                    band_name=band,
+                    soda_service_type="cutout-sync-maskedimage",
+                ),
+                m2_run_directory,
+            )
+            loaded = load_cutout_package(m2_run_directory / "package.json")
+        except Dp2Error as exc:
+            raise RouteDispatchError(
+                code=f"mriganka_m2_{band}_{exc.code}",
+                message=(
+                    f"The authenticated Rubin DP2 {band}-band package stage failed "
+                    "without recording credential material."
+                ),
+            ) from None
+        if loaded.package != package:
+            raise RouteDispatchError(
+                code="mriganka_m2_round_trip_mismatch",
+                message="A published M2 package changed during strict reload.",
+            )
+        if not (
+            math.isclose(
+                float(loaded.package.request.ra_deg),
+                request.target.ra_deg,
+                rel_tol=0.0,
+                abs_tol=1e-10,
+            )
+            and math.isclose(
+                float(loaded.package.request.dec_deg),
+                request.target.dec_deg,
+                rel_tol=0.0,
+                abs_tol=1e-10,
+            )
+            and loaded.package.dataset.band_name == band
+        ):
+            raise RouteDispatchError(
+                code="mriganka_m2_identity_mismatch",
+                message="A verified M2 package does not match its requested target or band.",
+            )
+        m2_runs.append((band, m2_run_directory, loaded))
+        _enforce_mriganka_storage_budget(
+            route_run_directory,
+            maximum_storage_bytes=request.budget.max_storage_bytes,
         )
-    finally:
-        shutil.rmtree(snapshot_root, ignore_errors=True)
-    if _directory_bytes(completed.run_directory) > request.budget.max_storage_bytes:
-        raise RouteDispatchError(
-            code="mriganka_storage_budget_exhausted",
-            message="The completed M3 run exceeded its caller-owned storage budget.",
-        )
-    invocation_inputs = completed.envelope.invocation.inputs
-    if len(invocation_inputs) != 1:
-        raise RouteDispatchError(
-            code="mriganka_preprocessing_provenance_invalid",
-            message="The completed preprocessing run did not bind exactly one M2 input.",
-        )
-    processed_observation_sha256 = invocation_inputs[0].manifest_sha256
-    processed_package = MrigankaModelInputPackage.model_validate(
-        completed.envelope.package.model_dump(mode="python"),
-        strict=True,
+
+    m2_package_paths = tuple(
+        run_directory / "package.json" for _, run_directory, _ in m2_runs
     )
-    processed_source = processed_package.source
-    if processed_source.manifest_sha256 != processed_observation_sha256:
+    m2_copy_bytes = sum(
+        _directory_bytes(run_directory) for _, run_directory, _ in m2_runs
+    )
+    _reserve_mriganka_stage_storage(
+        route_run_directory,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+        additional_bytes=m2_copy_bytes + _MRIGANKA_M3_FIXED_RESERVATION_BYTES,
+        stage="m3",
+    )
+    completed_m3 = run_registered_preprocessing(
+        registry=registry,
+        manifest_id=manifest.manifest_id,
+        package_paths=m2_package_paths,
+        output_root=route_run_directory / "m3",
+        require_aligned_shapes=False,
+        invocation_interface="agent_tool",
+    )
+    _enforce_mriganka_storage_budget(
+        route_run_directory,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+    )
+    invocation_inputs = completed_m3.envelope.invocation.inputs
+    if len(invocation_inputs) != 3 or tuple(
+        item.band for item in invocation_inputs
+    ) != ("g", "r", "i"):
         raise RouteDispatchError(
             code="mriganka_preprocessing_provenance_invalid",
-            message="The preprocessing source digest disagrees with its invocation.",
+            message="The completed M3 run did not bind exactly one g/r/i M2 package.",
         )
-    if not (
-        math.isclose(
-            float(processed_source.ra_deg),
-            request.target.ra_deg,
-            rel_tol=0.0,
-            abs_tol=1e-10,
+    try:
+        m3_package = MrigankaEnnThreeBandModelInputPackage.model_validate(
+            completed_m3.envelope.package.model_dump(mode="python"),
+            strict=True,
         )
-        and math.isclose(
-            float(processed_source.dec_deg),
-            request.target.dec_deg,
-            rel_tol=0.0,
-            abs_tol=1e-10,
+    except ValidationError:
+        raise RouteDispatchError(
+            code="mriganka_three_band_package_invalid",
+            message="The registered M3 stage did not publish its exact three-band contract.",
+        ) from None
+    if any(
+        not (
+            math.isclose(
+                source.ra_deg,
+                request.target.ra_deg,
+                rel_tol=0.0,
+                abs_tol=1e-10,
+            )
+            and math.isclose(
+                source.dec_deg,
+                request.target.dec_deg,
+                rel_tol=0.0,
+                abs_tol=1e-10,
+            )
         )
+        for source in m3_package.sources
     ):
         raise RouteDispatchError(
             code="mriganka_processed_target_mismatch",
-            message="The completed preprocessing run describes another sky coordinate.",
+            message="The completed M3 run describes a different sky coordinate.",
         )
-    qualification = resolved.manifest.qualification
-    gate_closed = not qualification.model_execution_allowed
-    return MrigankaDp2RouteResult(
+
+    _reserve_mriganka_stage_storage(
+        route_run_directory,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+        additional_bytes=_MRIGANKA_BRIDGE_STAGE_RESERVATION_BYTES,
+        stage="bridge",
+    )
+    completed_bridge = run_m3_to_m4_bridge(
+        m3_run_directory=completed_m3.run_directory,
+        output_root=route_run_directory / "bridge",
+    )
+    _enforce_mriganka_storage_budget(
+        route_run_directory,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+    )
+
+    _reserve_mriganka_stage_storage(
+        route_run_directory,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+        additional_bytes=_MRIGANKA_M4_STAGE_RESERVATION_BYTES,
+        stage="m4",
+    )
+    completed_m4 = run_m4_inference(
+        manifest_path=inference_manifest_path,
+        checkpoint_root=checkpoint_root,
+        input_path=completed_bridge.model_input_path,
+        output_root=route_run_directory / "m4",
+        bridge_manifest_path=completed_bridge.bridge_path,
+    )
+    if (
+        completed_m4.result.execution_scope_used
+        != "unqualified_dp2_technical_integration"
+        or completed_m4.result.bridge_provenance is None
+        or completed_m4.result.score_is_calibrated_probability
+        or completed_m4.result.decision_threshold_applied
+        or completed_m4.result.candidate_decision_made
+        or completed_m4.result.scientific_use_allowed
+    ):
+        raise RouteDispatchError(
+            code="mriganka_m4_scope_violation",
+            message="M4 did not preserve the required technical-integration-only boundary.",
+        )
+    _enforce_mriganka_storage_budget(
+        route_run_directory,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+    )
+
+    from .tools.report import assemble_mriganka_dp2_technical_report
+
+    report_id = f"report-{route_run_id}"
+    report = assemble_mriganka_dp2_technical_report(
+        report_id=report_id,
         request_id=request.request_id,
-        status="blocked" if gate_closed else "awaiting_implementation",
-        dataset_id=processed_source.dataset_id,
-        observation_manifest_sha256=processed_observation_sha256,
+        target=request.target,
+        m2_packages=(
+            m2_runs[0][2].package,
+            m2_runs[1][2].package,
+            m2_runs[2][2].package,
+        ),
+        m3_package=m3_package,
+        m3_completion=completed_m3.completion,
+        m3_completion_sha256=sha256_file(completed_m3.completion_path),
+        bridge_record=completed_bridge.record,
+        bridge_completion=completed_bridge.completion,
+        bridge_completion_sha256=sha256_file(completed_bridge.completion_path),
+        m4_result=completed_m4.result,
+        m4_completion=completed_m4.completion,
+        m4_completion_sha256=sha256_file(completed_m4.completion_path),
+    )
+    report_path = _write_budgeted_json(
+        route_store,
+        "report/technical-report.json",
+        report,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+    )
+    try:
+        reloaded_report = MrigankaDp2TechnicalReport.model_validate_json(
+            _bounded_regular_file(
+                report_path,
+                maximum_bytes=16 * _MIB,
+                label="mriganka_technical_report",
+            ),
+            strict=True,
+        )
+    except (ValueError, ValidationError):
+        raise RouteDispatchError(
+            code="mriganka_technical_report_round_trip_invalid",
+            message="The technical report failed strict reload after publication.",
+        ) from None
+    if reloaded_report != report:
+        raise RouteDispatchError(
+            code="mriganka_technical_report_round_trip_mismatch",
+            message="The technical report changed during strict reload.",
+        )
+
+    m2_results = tuple(
+        MrigankaDp2BandResult(
+            band=band,
+            dataset_id=loaded.package.dataset.dataset_id,
+            run_directory=str(run_directory),
+            package_manifest=_mriganka_artifact_ref(run_directory / "package.json"),
+            fits_artifact=_mriganka_artifact_ref(
+                run_directory / loaded.package.artifact.filename
+            ),
+            image_decoded_sha256=loaded.package.image.digest.sha256,
+            mask_decoded_sha256=loaded.package.mask.digest.sha256,
+            variance_decoded_sha256=loaded.package.variance.digest.sha256,
+        )
+        for band, run_directory, loaded in m2_runs
+    )
+    if len(m2_results) != 3:  # pragma: no cover - fixed request contract
+        raise RouteDispatchError(
+            code="mriganka_m2_result_count_invalid",
+            message="The route did not retain exactly three M2 results.",
+        )
+    typed_m2_results = (m2_results[0], m2_results[1], m2_results[2])
+
+    m3_result = MrigankaM3Result(
+        run_directory=str(completed_m3.run_directory),
         model_manifest_id=manifest.manifest_id,
         model_manifest_sha256=reference.sha256,
-        preprocessing_run_directory=str(completed.run_directory),
-        preprocessing_completion_sha256=sha256_file(completed.completion_path),
-        qualification_state=qualification.state,
-        preprocessing_execution_allowed=(qualification.preprocessing_execution_allowed),
-        model_execution_allowed=qualification.model_execution_allowed,
-        scientific_use_allowed=qualification.scientific_use_allowed,
-        classifier_block_reason=(
-            "model_execution_gate_closed"
-            if gate_closed
-            else "classifier_executor_not_registered"
+        package_manifest=_mriganka_artifact_ref(
+            completed_m3.run_directory / "manifest.json"
         ),
+        completion=_mriganka_artifact_ref(completed_m3.completion_path),
+        model_input_bchw=_mriganka_artifact_ref(
+            completed_m3.run_directory / m3_package.model_input.filename
+        ),
+        qa_preview=_mriganka_artifact_ref(
+            completed_m3.run_directory / m3_package.preview.filename
+        ),
+        cross_band_wcs_maximum_separation_arcsec=(
+            m3_package.cross_band_wcs.maximum_separation_arcsec
+        ),
+    )
+    bridge_result = MrigankaBridgeResult(
+        run_directory=str(completed_bridge.run_directory),
+        bridge_manifest=_mriganka_artifact_ref(completed_bridge.bridge_path),
+        completion=_mriganka_artifact_ref(completed_bridge.completion_path),
+        model_input_chw=_mriganka_artifact_ref(completed_bridge.model_input_path),
+    )
+    m4_result = MrigankaM4Result(
+        run_directory=str(completed_m4.run_directory),
+        bundle_id=completed_m4.result.bundle_id,
+        bundle_manifest_sha256=completed_m4.result.bundle_manifest_sha256,
+        inference_result=_mriganka_artifact_ref(completed_m4.result_path),
+        completion=_mriganka_artifact_ref(completed_m4.completion_path),
+        embedding=_mriganka_artifact_ref(completed_m4.embedding_path),
+        raw_logits=completed_m4.result.logits,
+        uncalibrated_softmax_components=completed_m4.result.scores,
+    )
+    report_ref = _mriganka_artifact_ref(report_path)
+    completion_fields = {
+        "route_run_id": route_run_id,
+        "request_id": request.request_id,
+        "request_sha256": canonical_json_sha256(request),
+        "completed_at_utc": utc_now(),
+        "m2_package_manifest_sha256": tuple(
+            item.package_manifest.sha256 for item in typed_m2_results
+        ),
+        "m3_model_manifest_sha256": reference.sha256,
+        "m3_completion_sha256": m3_result.completion.sha256,
+        "bridge_completion_sha256": bridge_result.completion.sha256,
+        "m4_bundle_manifest_sha256": m4_result.bundle_manifest_sha256,
+        "m4_inference_result_sha256": m4_result.inference_result.sha256,
+        "m4_completion_sha256": m4_result.completion.sha256,
+        "technical_report_id": report.report_id,
+        "technical_report_sha256": report_ref.sha256,
+        "unresolved_scientific_blockers": report.unresolved_scientific_blockers,
+    }
+    bytes_before_completion = _directory_bytes(route_run_directory)
+    predicted_storage_bytes = bytes_before_completion
+    for _ in range(8):
+        usage = BudgetUsage(
+            tool_calls=_MRIGANKA_TOOL_CALLS,
+            storage_bytes=predicted_storage_bytes,
+        )
+        completion = MrigankaDp2RouteCompletion(
+            **completion_fields,
+            usage=usage,
+        )
+        next_prediction = bytes_before_completion + len(
+            route_store.json_bytes(completion)
+        )
+        if next_prediction == predicted_storage_bytes:
+            break
+        predicted_storage_bytes = next_prediction
+    else:  # pragma: no cover - decimal byte length converges in at most two changes
+        raise RouteDispatchError(
+            code="mriganka_storage_accounting_did_not_converge",
+            message="The durable route storage accounting did not converge.",
+        )
+    if not completion.usage.fits(request.budget):
+        raise RouteDispatchError(
+            code="mriganka_budget_accounting_mismatch",
+            message="Final known-route usage would exceed its declared budget.",
+        )
+    # This is the route-level publication commit and intentionally the last write.
+    completion_path = _write_budgeted_json(
+        route_store,
+        "completion.json",
+        completion,
+        maximum_storage_bytes=request.budget.max_storage_bytes,
+    )
+    try:
+        reloaded_completion = MrigankaDp2RouteCompletion.model_validate_json(
+            _bounded_regular_file(
+                completion_path,
+                maximum_bytes=2 * _MIB,
+                label="mriganka_route_completion",
+            ),
+            strict=True,
+        )
+    except (ValueError, ValidationError):
+        raise RouteDispatchError(
+            code="mriganka_route_completion_round_trip_invalid",
+            message="The route completion failed strict reload after publication.",
+        ) from None
+    if reloaded_completion != completion:
+        raise RouteDispatchError(
+            code="mriganka_route_completion_round_trip_mismatch",
+            message="The route completion changed during strict reload.",
+        )
+    actual_storage_bytes = _directory_bytes(route_run_directory)
+    if actual_storage_bytes != completion.usage.storage_bytes:
+        raise RouteDispatchError(
+            code="mriganka_durable_storage_accounting_mismatch",
+            message="The durable route storage usage does not match the artifact tree.",
+        )
+    completion_ref = _mriganka_artifact_ref(completion_path)
+    return MrigankaDp2RouteResult(
+        request_id=request.request_id,
+        route_run_id=route_run_id,
+        route_run_directory=str(route_run_directory),
+        target=request.target,
+        m2_packages=typed_m2_results,
+        m3=m3_result,
+        bridge=bridge_result,
+        m4=m4_result,
+        technical_report_id=report.report_id,
+        technical_report=report_ref,
+        route_completion=completion_ref,
+        usage=completion.usage,
+        unresolved_scientific_blockers=report.unresolved_scientific_blockers,
     )
 
 
@@ -726,14 +1086,15 @@ async def _run_researcher_route(
         ResearchAgentLimits,
         run_open_research_agent,
     )
-    from .tools import build_intake_repository_snapshot, create_repository_intake
-    from .tools.repository_snapshot import IntakeRepositorySnapshot
 
     # Imported lazily so the deterministic DP2 and planning paths do not need a
     # live-provider SDK or inspect credential state.
     from ripple.modeling.agent_provider import (
         build_live_agent_model_from_environment,
     )
+
+    from .tools import build_intake_repository_snapshot, create_repository_intake
+    from .tools.repository_snapshot import IntakeRepositorySnapshot
 
     _require_researcher_budget(request)
     requests_per_phase = min(50, request.budget.max_llm_requests // 2)
@@ -1021,7 +1382,7 @@ async def _run_researcher_route(
                     },
                     maximum_storage_bytes=maximum_storage_bytes,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001,S110 - failure evidence is best effort
                 pass
         raise
 
