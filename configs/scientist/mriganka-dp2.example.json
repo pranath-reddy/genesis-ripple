@@ -1,0 +1,18 @@
+{
+  "branch": "mriganka_dp2",
+  "request_id": "mriganka-dp2-preprocessing",
+  "observation_package": "/absolute/path/to/dp2_m2/replace-with-run-id/package.json",
+  "model_manifest": "/absolute/path/to/genesis-ripple/ripple/modeling/manifests/mriganka-domain-adaptation.provisional.v1.json",
+  "target": {
+    "ra_deg": 53.1246023,
+    "dec_deg": -27.7404715
+  },
+  "budget": {
+    "max_gpu_seconds": 0,
+    "max_llm_requests": 0,
+    "max_simulations": 0,
+    "max_storage_bytes": 67108864,
+    "max_tool_calls": 4,
+    "max_training_runs": 0
+  }
+}

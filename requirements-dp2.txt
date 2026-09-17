@@ -1,0 +1,7 @@
+# Stage-1 Rubin DP2 external-access environment, verified 2026-09-16.
+astropy==6.1.7
+numpy==2.2.6
+pydantic==2.13.5
+pyvo==1.9.1
+requests==2.32.4
+urllib3==2.8.0

@@ -1,0 +1,170 @@
+{
+  "cosmology": {
+    "hubble_constant_km_s_mpc": 70.0,
+    "implementation": "astropy.cosmology.FlatLambdaCDM",
+    "matter_density_omega_m": 0.3
+  },
+  "dataset_name": "slsim-lens-nonlens-smoke",
+  "deflector_population": {
+    "angular_size_arcsec": {
+      "maximum": 0.65,
+      "minimum": 0.15
+    },
+    "einstein_radius_arcsec": {
+      "maximum": 2.0,
+      "minimum": 0.8
+    },
+    "light_ellipticity_component": {
+      "maximum": 0.2,
+      "minimum": -0.2
+    },
+    "light_profile": "single_sersic",
+    "magnitudes": [
+      {
+        "band": "r",
+        "magnitude_ab": {
+          "maximum": 21.0,
+          "minimum": 18.0
+        }
+      }
+    ],
+    "mass_ellipticity_component": {
+      "maximum": 0.2,
+      "minimum": -0.2
+    },
+    "mass_profile": "EPL",
+    "power_law_slope": {
+      "maximum": 2.1,
+      "minimum": 1.9
+    },
+    "redshift": {
+      "maximum": 0.65,
+      "minimum": 0.25
+    },
+    "sersic_index": {
+      "maximum": 5.0,
+      "minimum": 2.0
+    }
+  },
+  "label_mapping": {
+    "lens": 1,
+    "non_lens": 0
+  },
+  "lens_count": 5,
+  "lens_selection": {
+    "maximum_draw_attempts_per_lens": 64,
+    "maximum_image_separation_arcsec": 10.0,
+    "minimum_image_separation_arcsec": 0.8
+  },
+  "lensing_geometry": {
+    "deflector_center_component_arcsec": {
+      "maximum": 0.1,
+      "minimum": -0.1
+    },
+    "include_deflector_light": true,
+    "lens_source_radius_arcsec": {
+      "maximum": 0.25,
+      "minimum": 0.02
+    },
+    "line_of_sight_convergence": {
+      "maximum": 0.02,
+      "minimum": -0.02
+    },
+    "line_of_sight_shear_component": {
+      "maximum": 0.04,
+      "minimum": -0.04
+    },
+    "non_lens_intruder_radius_arcsec": {
+      "maximum": 2.3,
+      "minimum": 0.7
+    },
+    "use_jax_lens_models": false
+  },
+  "master_seed": 20260917,
+  "non_lens_count": 5,
+  "provenance": {
+    "jaxtronomy_source": {
+      "evidence_scope": "SLSim import-time profile registry; JAX execution remains disabled",
+      "git_commit": "a268deaf08dcabfb2919c480acbf39cc6596bf87",
+      "repository_relative_path": "ripple/scientist/vendor/JAXtronomy/jaxtronomy",
+      "source_id": "jaxtronomy-source",
+      "source_kind": "executable_python"
+    },
+    "revisions_verified_by_executor": false,
+    "slsim_source": {
+      "evidence_scope": "SLSim source, lens, false-positive, and image-rendering APIs",
+      "git_commit": "ad62eefb74944f7ee76abf826d8c6329a5894d4b",
+      "repository_relative_path": "ripple/scientist/vendor/slsim/slsim",
+      "source_id": "slsim-source",
+      "source_kind": "executable_python"
+    },
+    "tutorial_code": {
+      "evidence_scope": "Executable code cells for single-lens and false-positive examples",
+      "git_commit": "cbf2165f35c29278b255e4b679d51c84cf86e5d1",
+      "repository_relative_path": "slsim-tutorials",
+      "source_id": "slsim-tutorial-code",
+      "source_kind": "notebook_code_cells"
+    }
+  },
+  "purpose": "integration_smoke",
+  "rendering": {
+    "add_background_counts": false,
+    "add_noise": true,
+    "bands": [
+      "r"
+    ],
+    "coadd_years": 10,
+    "exposure_time_seconds": null,
+    "image_units": "counts_per_second",
+    "noise_model": "slsim.SimAPI.noise_for_model",
+    "num_exposures": null,
+    "num_pix": 64,
+    "observatory": "LSST",
+    "output_axes": [
+      "channel",
+      "y",
+      "x"
+    ],
+    "output_dtype": "float32",
+    "pixel_scale_arcsec": 0.2,
+    "point_source_supersampling_factor": 1,
+    "psf_fwhm_arcsec": 0.9,
+    "psf_type": "GAUSSIAN",
+    "renderer": "slsim.ImageSimulation.simulate_image",
+    "supersampling_factor": 3,
+    "with_deflector": true,
+    "with_point_source": false,
+    "with_source": true
+  },
+  "schema_version": "ripple.scientist.slsim-smoke-spec.v1",
+  "scientific_status": "synthetic_wiring_only",
+  "source_population": {
+    "angular_size_arcsec": {
+      "maximum": 0.18,
+      "minimum": 0.08
+    },
+    "ellipticity_component": {
+      "maximum": 0.18,
+      "minimum": -0.18
+    },
+    "magnitudes": [
+      {
+        "band": "r",
+        "magnitude_ab": {
+          "maximum": 24.0,
+          "minimum": 21.5
+        }
+      }
+    ],
+    "profile": "single_sersic",
+    "redshift": {
+      "maximum": 2.0,
+      "minimum": 1.2
+    },
+    "sersic_index": {
+      "maximum": 2.5,
+      "minimum": 0.8
+    }
+  },
+  "supports_scientific_claims": false
+}

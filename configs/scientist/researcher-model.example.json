@@ -1,0 +1,24 @@
+{
+  "branch": "researcher_model",
+  "request_id": "mriganka-repository-analysis",
+  "repository_source": {
+    "kind": "local_path",
+    "path": "/absolute/path/to/DeepLense_Gravitational_Lensing_Mriganka_Nath/Lensing_DomainAdaptation"
+  },
+  "end_goal": "Analyze the supplied Mriganka Nath classifier code and produce an evidence-backed RIPPLe integration plan covering architecture, input tensor, preprocessing, checkpoint loading, output semantics, domain risks, and unresolved requirements.",
+  "success_criteria": [
+    "Identify the classifier architecture and callable input and output behavior from executable source.",
+    "Separate preprocessing facts supported by code from unresolved band, field-of-view, PSF, augmentation, and checkpoint assumptions.",
+    "Define the smallest registered-adapter integration plan without importing or executing the supplied repository.",
+    "Return explicit blockers when the source is insufficient for scientifically valid Rubin DP2 inference."
+  ],
+  "target_observation_domain": "Rubin DP2 deep-coadd gravitational-lens classification",
+  "budget": {
+    "max_gpu_seconds": 0,
+    "max_llm_requests": 24,
+    "max_simulations": 0,
+    "max_storage_bytes": 67108864,
+    "max_tool_calls": 64,
+    "max_training_runs": 0
+  }
+}

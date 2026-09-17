@@ -1,0 +1,2 @@
+-r requirements-m3.txt
+pydantic-ai-slim[openai]==2.1.0

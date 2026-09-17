@@ -1,0 +1,333 @@
+{
+  "schema_version": "ripple.model-manifest.v1",
+  "manifest_id": "mriganka-domain-adaptation-provisional-v1",
+  "model_id": "deeplense.mriganka.domain-adaptation",
+  "model_version": "unresolved-v1",
+  "display_name": "Mriganka Nath domain-adaptation lens classifier (provisional adapter)",
+  "created_at_utc": "2026-09-17T00:00:00Z",
+  "implementation": {
+    "framework": "pytorch",
+    "source_locator": "DeepLense_Gravitational_Lensing_Mriganka_Nath/Lensing_DomainAdaptation",
+    "source_revision": "8d2732042b1fcff58404aea1db54b3baf03e0649",
+    "source_sha256": null,
+    "architecture_entrypoint": "models.Encoder plus models.Classifier",
+    "checkpoint_locator": null,
+    "checkpoint_sha256": null
+  },
+  "observation": {
+    "accepted_product_kinds": [
+      "rubin_dp2_deep_coadd_masked_image"
+    ],
+    "required_bands": [
+      "r"
+    ],
+    "optional_bands": [],
+    "required_components": {
+      "image": true,
+      "mask": "required",
+      "variance": "required",
+      "celestial_wcs": "required",
+      "psf": "optional",
+      "photometric_calibration": "required"
+    },
+    "accepted_image_units": [
+      "nJy"
+    ],
+    "pixel_scale_arcsec": null,
+    "field_of_view_arcsec": null,
+    "band_alignment": "not_applicable",
+    "missing_band_policy": "reject",
+    "domain_notes": [
+      "Current Rubin DP2 support describes the provisional RIPPLe adapter only; training-domain compatibility remains unresolved."
+    ]
+  },
+  "preprocessing": {
+    "adapter_id": "mriganka-native64-minmax",
+    "adapter_version": "v1",
+    "recipe_id": "mriganka-domain-adaptation-native64-minmax-v1",
+    "steps": [
+      {
+        "order": 0,
+        "operation": "verify-observation",
+        "implementation_id": "ripple-verify-m2-v1",
+        "parameters": {
+          "product_kind": "rubin_dp2_deep_coadd_masked_image",
+          "image_unit": "nJy",
+          "components": [
+            "image",
+            "mask",
+            "variance",
+            "celestial_wcs",
+            "photometric_calibration"
+          ]
+        },
+        "evidence_claim_ids": [
+          "current-adapter-contract"
+        ]
+      },
+      {
+        "order": 1,
+        "operation": "select-band",
+        "implementation_id": "ripple-select-band-v1",
+        "parameters": {
+          "band": "r",
+          "additional_bands": "reject"
+        },
+        "evidence_claim_ids": [
+          "current-adapter-contract",
+          "training-band-unresolved"
+        ]
+      },
+      {
+        "order": 2,
+        "operation": "native-center-crop",
+        "implementation_id": "ripple-native-center-crop-v1",
+        "parameters": {
+          "shape_yx": [
+            64,
+            64
+          ],
+          "centering": "nearest-native-pixel-window-around-requested-wcs-coordinate",
+          "resampling": "none",
+          "orientation_change": "none",
+          "background_operation": "none"
+        },
+        "evidence_claim_ids": [
+          "current-adapter-contract",
+          "training-fov-unresolved"
+        ]
+      },
+      {
+        "order": 3,
+        "operation": "validate-crop",
+        "implementation_id": "ripple-validate-mriganka-crop-v1",
+        "parameters": {
+          "image_finite_required": true,
+          "variance_positive_finite_required": true,
+          "mask_schema_exact": true,
+          "fatal_bits": [
+            "NO_DATA",
+            "SATURATED"
+          ],
+          "caution_bits": [
+            "INTERPOLATED",
+            "COSMIC_RAY",
+            "DETECTION_EDGE",
+            "CLIPPED",
+            "REJECTED",
+            "INEXACT_PSF"
+          ],
+          "retained_bits": [
+            "DETECTED"
+          ],
+          "maximum_fatal_fraction": 0.0
+        },
+        "evidence_claim_ids": [
+          "current-adapter-contract",
+          "training-psf-noise-unresolved"
+        ]
+      },
+      {
+        "order": 4,
+        "operation": "minmax-normalize",
+        "implementation_id": "ripple-per-image-minmax-v1",
+        "parameters": {
+          "scope": "crop",
+          "output_min": 0.0,
+          "output_max": 1.0,
+          "positive_dynamic_range_required": true
+        },
+        "evidence_claim_ids": [
+          "per-image-minmax-direct"
+        ]
+      },
+      {
+        "order": 5,
+        "operation": "build-tensor",
+        "implementation_id": "ripple-bchw-float32-v1",
+        "parameters": {
+          "axes": [
+            "batch",
+            "channel",
+            "y",
+            "x"
+          ],
+          "shape": [
+            1,
+            1,
+            64,
+            64
+          ],
+          "dtype": "float32"
+        },
+        "evidence_claim_ids": [
+          "single-channel-direct",
+          "current-adapter-contract"
+        ]
+      }
+    ],
+    "inference_augmentation": "none"
+  },
+  "tensor": {
+    "axes": [
+      "batch",
+      "channel",
+      "y",
+      "x"
+    ],
+    "shape": [
+      1,
+      1,
+      64,
+      64
+    ],
+    "dtype": "float32",
+    "unit": "dimensionless",
+    "channel_semantics": [
+      "single selected r-band image"
+    ],
+    "value_range": [
+      0.0,
+      1.0
+    ]
+  },
+  "output": {
+    "task": "binary_lens_classification",
+    "raw_output": "logit",
+    "labels": [
+      "non_lens",
+      "lens"
+    ],
+    "score_is_calibrated_probability": false,
+    "decision_threshold": null
+  },
+  "evidence_sources": [
+    {
+      "source_id": "mriganka-dataset-source",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "Mriganka domain-adaptation dataset loader",
+      "locator": "DeepLense_Gravitational_Lensing_Mriganka_Nath/Lensing_DomainAdaptation/dataset.py",
+      "revision": "8d2732042b1fcff58404aea1db54b3baf03e0649",
+      "sha256": "484627ad5bdef8f13658addaeb702c00351a05cc4c8d2c50d1980ea48aff7006",
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    },
+    {
+      "source_id": "mriganka-model-source",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "Mriganka domain-adaptation model definitions",
+      "locator": "DeepLense_Gravitational_Lensing_Mriganka_Nath/Lensing_DomainAdaptation/models.py",
+      "revision": "8d2732042b1fcff58404aea1db54b3baf03e0649",
+      "sha256": "decf69d3ed5894d89ad1879f81d9edbe943aca2631848c94751d6ea3534b785a",
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    },
+    {
+      "source_id": "ripple-mriganka-recipe",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "Current provisional RIPPLe Mriganka preprocessing recipe",
+      "locator": "ripple/preprocessing/contracts.py",
+      "revision": "mriganka-adapter-v1",
+      "sha256": "7a6d9c60471b25e22c811d84153a17f9944e11607539def15ec5dcdec34828ea",
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    },
+    {
+      "source_id": "ripple-mriganka-transform",
+      "kind": "executable_source",
+      "authority": "direct_executable_evidence",
+      "title": "Current provisional RIPPLe Mriganka deterministic transform",
+      "locator": "ripple/preprocessing/mriganka.py",
+      "revision": "mriganka-adapter-v1",
+      "sha256": "14f40aee1b4e709d3a9f2c50dd8858c12a326ef1293758f5ff07036ba12a9da3",
+      "accessed_at_utc": "2026-09-17T00:00:00Z"
+    }
+  ],
+  "evidence_claims": [
+    {
+      "claim_id": "per-image-minmax-direct",
+      "field_path": "preprocessing.steps",
+      "value_summary": "The executable dataset loader applies per-image minimum-maximum normalization before augmentation.",
+      "source_ids": [
+        "mriganka-dataset-source"
+      ],
+      "support": "direct",
+      "review_required": false,
+      "notes": null
+    },
+    {
+      "claim_id": "single-channel-direct",
+      "field_path": "tensor.channel_semantics",
+      "value_summary": "The loader adds one channel and the listed encoder backbone is constructed with one input channel.",
+      "source_ids": [
+        "mriganka-dataset-source",
+        "mriganka-model-source"
+      ],
+      "support": "direct",
+      "review_required": false,
+      "notes": null
+    },
+    {
+      "claim_id": "current-adapter-contract",
+      "field_path": "preprocessing.recipe_id",
+      "value_summary": "RIPPLe currently implements a native 64 by 64 r-band crop followed by per-crop minimum-maximum normalization for preview only.",
+      "source_ids": [
+        "ripple-mriganka-recipe",
+        "ripple-mriganka-transform"
+      ],
+      "support": "direct",
+      "review_required": true,
+      "notes": "This proves current adapter behavior, not compatibility with a recovered checkpoint."
+    },
+    {
+      "claim_id": "training-band-unresolved",
+      "field_path": "observation.required_bands",
+      "value_summary": "The executable training loader does not identify the astronomical band represented by each NPY image.",
+      "source_ids": [
+        "mriganka-dataset-source"
+      ],
+      "support": "unresolved",
+      "review_required": true,
+      "notes": null
+    },
+    {
+      "claim_id": "training-fov-unresolved",
+      "field_path": "observation.field_of_view_arcsec",
+      "value_summary": "Training pixel scale and angular field of view are not fixed by the reviewed executable loader.",
+      "source_ids": [
+        "mriganka-dataset-source",
+        "mriganka-model-source"
+      ],
+      "support": "unresolved",
+      "review_required": true,
+      "notes": null
+    },
+    {
+      "claim_id": "training-psf-noise-unresolved",
+      "field_path": "observation.required_components",
+      "value_summary": "The reviewed model and dataset source do not establish the training PSF, noise, mask, variance, or foreground-light contract.",
+      "source_ids": [
+        "mriganka-dataset-source",
+        "mriganka-model-source"
+      ],
+      "support": "unresolved",
+      "review_required": true,
+      "notes": null
+    }
+  ],
+  "qualification": {
+    "state": "preprocessing_preview_only",
+    "preprocessing_execution_allowed": true,
+    "model_execution_allowed": false,
+    "scientific_use_allowed": false,
+    "unresolved_requirements": [
+      "encoder checkpoint",
+      "classifier checkpoint",
+      "algorithm and backbone",
+      "training band",
+      "training pixel scale and angular field",
+      "training PSF, noise, masks, and preparation contract"
+    ],
+    "approval_record": null
+  }
+}

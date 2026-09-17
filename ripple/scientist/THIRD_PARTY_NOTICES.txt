@@ -1,0 +1,46 @@
+RIPPLe scientist third-party notices
+====================================
+
+DeepLense AI Scientist architecture-builder precedent
+------------------------------------------------------
+
+The architecture family implementations in
+``ripple/scientist/tools/model_builders.py`` are adapted from DeepLense AI
+Scientist revision dbea8485f8bf64250e2aec82dd8999d354085996.
+
+MIT License
+
+Copyright (c) 2026 Pranath Reddy Kumbam
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Vendored scientific packages
+-----------------------------
+
+SLSim is vendored at ``ripple/scientist/vendor/slsim`` under its MIT license.
+JAXtronomy is vendored at ``ripple/scientist/vendor/JAXtronomy`` under its BSD
+3-Clause license. Their full license texts remain in those source roots.
+
+Simulation-design reference
+---------------------------
+
+The bounded simulation specification records the SLSim tutorial repository at
+revision cbf2165f35c29278b255e4b679d51c84cf86e5d1 as design evidence for the
+single-lens and false-positive examples. Tutorial files are not distributed in
+this repository and are not a runtime dependency.

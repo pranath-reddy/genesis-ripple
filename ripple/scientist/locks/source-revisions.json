@@ -1,0 +1,39 @@
+{
+  "schema_version": "ripple.scientist.source-revisions.v1",
+  "runtime_sources": [
+    {
+      "name": "slsim",
+      "repository": "https://github.com/LSST-strong-lensing/slsim.git",
+      "commit": "ad62eefb74944f7ee76abf826d8c6329a5894d4b",
+      "local_path": "ripple/scientist/vendor/slsim/slsim",
+      "runtime_role": "lens, false-positive, and LSST image simulation",
+      "transfer_tree_sha256": "e7d795f52f2d94da83317832d545e864b45e876ae7d549fbe93939a5ff8586bc"
+    },
+    {
+      "name": "JAXtronomy",
+      "repository": "https://github.com/lenstronomy/JAXtronomy.git",
+      "commit": "a268deaf08dcabfb2919c480acbf39cc6596bf87",
+      "local_path": "ripple/scientist/vendor/JAXtronomy/jaxtronomy",
+      "runtime_role": "SLSim import compatibility; JAX model execution remains disabled",
+      "transfer_tree_sha256": "8fd09563170d6e780caa1c1f71a607cd0df5ff39e1d3b97ca10d091edc000a26"
+    }
+  ],
+  "source_precedent_only": [
+    {
+      "name": "DeepLense-AI-Scientist",
+      "repository": "https://github.com/ML4SCI/DeepLense-AI-Scientist.git",
+      "commit": "dbea8485f8bf64250e2aec82dd8999d354085996",
+      "runtime_dependency": false,
+      "port_path": "ripple/scientist/tools/model_builders.py",
+      "local_revision": "ripple-model-builders-v1",
+      "port_sha256": "b470fa5d89dc537916ec464a3d5e854fa1aa12dc9170ec56d0c9651405882b6f"
+    },
+    {
+      "name": "slsim-tutorials",
+      "repository": "https://github.com/LSST-strong-lensing/slsim-tutorials.git",
+      "commit": "cbf2165f35c29278b255e4b679d51c84cf86e5d1",
+      "runtime_dependency": false,
+      "evidence_role": "design reference for the bounded single-lens and false-positive smoke specification"
+    }
+  ]
+}
