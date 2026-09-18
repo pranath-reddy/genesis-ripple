@@ -1,0 +1,9 @@
+Model Name,Invoked Model ID,Provider,Category,Stage Runs,Provider Requests,Known Provider Requests,Successful/Failed Stage Runs,Measured/Known Requests,Request Count Status,Arms Invoked,Uncached Input,Cache Write,Cache Read,Output,Pricing Basis,Total Rate-based Est. USD,Avg Est. USD / Invoked Arm,Cost Status
+Claude 3.7 Sonnet,apac.anthropic.claude-3-7-sonnet-20250219-v1:0,Anthropic,Paid API,3,11,11,3/0,11/11,complete,0,19308,0,0,2378,manual proxy estimate,0.102953,N/A,estimated
+Claude Sonnet 4.5,global.anthropic.claude-sonnet-4-5-20250929-v1:0,Anthropic,Paid API,3,8,8,3/0,8/8,complete,0,14795,0,0,2573,published rate,0.082980,N/A,estimated
+GPT-5.6 Sol,global.openai.gpt-5.6-sol,OpenAI,Paid API,3,9,9,3/0,9/9,complete,0,1625,2701,4996,1355,published rate,0.049103,N/A,estimated
+GPT-5.6 Terra,in.openai.gpt-5.6-terra,OpenAI,Paid API,3,9,9,3/0,9/9,complete,0,1625,2599,4894,1152,published rate,0.027005,N/A,estimated
+GPT-5.6 Luna,in.openai.gpt-5.6-luna,OpenAI,Paid API,15,57,57,15/0,57/57,complete,6,34038,9124,4901,4809,published rate,0.016453,0.002742,estimated
+Amazon Nova Lite,apac.amazon.nova-lite-v1:0,Amazon,Paid API,3,7,7,3/0,7/7,complete,0,12877,0,0,2165,published rate,0.001292,N/A,estimated
+Claude Haiku 4.5,global.anthropic.claude-haiku-4-5-20251001-v1:0,Anthropic,Paid API,3,N/A,3,2/1,3/3,partially unavailable,0,4239,0,0,958,published rate,N/A,N/A,partially unavailable
+Gemma 3 27B IT,google.gemma-3-27b-it,Google,Paid API,2,N/A,1,1/1,1/1,partially unavailable,0,60,0,0,43,published rate,N/A,N/A,partially unavailable

@@ -1,0 +1,21 @@
+\begin{table*}[t]
+\centering
+\caption{Final validation and held-out evaluation summary. Shared-data trained arms use regime shared-slsim-60918-v1; any Mriganka row is a separately reported frozen external zero-shot evaluation and is not a fair training comparison. N/A means the metric was not measured. Evidence level: synthetic benchmark unqualified; same-regime architecture comparison is allowed; scientific performance claims are not allowed by the recorded qualification.}
+\label{tab:ripple-final-performance}
+\small
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llllrrrrrrrr}
+\toprule
+Arm & Status & Comparison Regime & Evaluation Dataset & Learned Params. (M) & Materialized State (M) & Validation Acc. & Validation BA & Validation AUC & Held-out/Eval Acc. & Held-out/Eval BA & Held-out/Eval AUC \\
+\midrule
+C4 Equivariant & succeeded & shared-data trained arm & slsim-study-16e1d64e20a28c2c & 0.019 & N/A & 0.7600 & 0.7600 & 0.8218 & N/A & N/A & N/A \\
+MLP Mixer & succeeded & shared-data trained arm & slsim-study-16e1d64e20a28c2c & 0.232 & N/A & 0.9433 & 0.9433 & 0.9841 & N/A & N/A & N/A \\
+Convolution plus Attention & succeeded & shared-data trained arm & slsim-study-16e1d64e20a28c2c & 0.410 & N/A & 0.9033 & 0.9033 & 0.9635 & N/A & N/A & N/A \\
+CNN Medium S4 & succeeded & shared-data trained arm & slsim-study-16e1d64e20a28c2c & 1.174 & N/A & 0.9700 & 0.9700 & 0.9961 & 0.9800 & 0.9800 & 0.9967 \\
+ViT Tiny & succeeded & shared-data trained arm & slsim-study-16e1d64e20a28c2c & 2.821 & N/A & 0.9167 & 0.9167 & 0.9736 & N/A & N/A & N/A \\
+ResNet-34 Baseline & succeeded & shared-data trained arm & slsim-study-16e1d64e20a28c2c & 21.286 & N/A & 0.9467 & 0.9467 & 0.9888 & 0.9483 & 0.9483 & 0.9895 \\
+Mriganka (reported separately) & blocked & frozen external checkpoint zero-shot; NOT a fair training comparison & N/A & 3.392 & 41.656 & N/A & N/A & N/A & N/A & N/A & N/A \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}

@@ -1,0 +1,9 @@
+Architecture,Family,Regime,Learned Params. (M),Materialized State (M),Tuning Iters.,Phase A Measured Tokens,Phase B Measured Tokens,All Measured Tokens,Agent Wall Time (s),Worker Time (s),Remote Wall Time (s),Amazon Nova Lite Rate-based Est. USD,Claude 3.7 Sonnet Rate-based Est. USD,Claude Haiku 4.5 Rate-based Est. USD,Claude Sonnet 4.5 Rate-based Est. USD,Gemma 3 27B IT Rate-based Est. USD,GPT-5.6 Luna Rate-based Est. USD,GPT-5.6 Sol Rate-based Est. USD,GPT-5.6 Terra Rate-based Est. USD
+C4 Equivariant,equivariant,trained arm,0.019,N/A,2,N/A,7013,7013,7.0,2.3,8.2,N/A,N/A,N/A,N/A,N/A,0.002197,N/A,N/A
+MLP Mixer,mlpmixer,trained arm,0.232,N/A,2,N/A,7095,7095,6.9,2.0,7.9,N/A,N/A,N/A,N/A,N/A,0.002270,N/A,N/A
+Convolution plus Attention,hybrid,trained arm,0.410,N/A,2,N/A,7109,7109,7.2,2.6,8.5,N/A,N/A,N/A,N/A,N/A,0.002306,N/A,N/A
+CNN Medium S4,cnn,trained arm,1.174,N/A,2,N/A,7203,7203,7.6,3.6,10.3,N/A,N/A,N/A,N/A,N/A,0.002436,N/A,N/A
+ViT Tiny,vit,trained arm,2.821,N/A,2,N/A,7041,7041,6.9,4.3,10.2,N/A,N/A,N/A,N/A,N/A,0.002216,N/A,N/A
+ResNet-34 Baseline,resnet,trained arm,21.286,N/A,2,N/A,7106,7106,6.9,5.7,13.0,N/A,N/A,N/A,N/A,N/A,0.002298,N/A,N/A
+Shared model overhead,study-wide,shared; not attributable to one arm,N/A,N/A,N/A,N/A,N/A,N/A,213.0,N/A,N/A,0.001292,0.102953,N/A,0.082980,N/A,0.002730,0.049103,0.027005
+Mriganka (separate),external checkpoint,zero-shot; NOT comparable,3.392,41.656,0,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A
