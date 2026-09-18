@@ -763,6 +763,13 @@ class ArchitectureModelStudyRunner:
         for index, model in enumerate(self.configuration.bedrock_models):
             if model.model_id not in enabled:
                 continue
+            self._write_progress(
+                status="running",
+                activity="bedrock_architecture_planner",
+                model_index=index + 1,
+                model_count=len(self.configuration.bedrock_models),
+                model_id=model.model_id,
+            )
             slug = _safe_slug(model.model_id)
             planner_started = _utc_now()
             planner_evidence_id = f"architecture-generator-{index:02d}"
@@ -823,6 +830,13 @@ class ArchitectureModelStudyRunner:
 
             judge_started = _utc_now()
             judge_evidence_id = f"architecture-judge-{index:02d}"
+            self._write_progress(
+                status="running",
+                activity="bedrock_architecture_judge",
+                model_index=index + 1,
+                model_count=len(self.configuration.bedrock_models),
+                model_id=model.model_id,
+            )
             try:
                 judge = run_architecture_judge(
                     dataset_summary,

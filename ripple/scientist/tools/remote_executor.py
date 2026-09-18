@@ -349,6 +349,10 @@ def _ssh_prefix(settings: RemoteWorkerSettings) -> list[str]:
         "BatchMode=yes",
         "-o",
         f"ConnectTimeout={settings.connect_timeout_seconds}",
+        "-o",
+        "ServerAliveInterval=30",
+        "-o",
+        "ServerAliveCountMax=6",
         settings.host,
     ]
 
