@@ -1,8 +1,9 @@
-"""Typed contracts for the bounded SLSim lens/non-lens integration smoke.
+"""Typed contracts for bounded SLSim lens/non-lens simulations.
 
-The smoke dataset is a wiring artifact, not a scientifically representative
-population.  Every simulator choice is carried by :class:`SlsimSmokeSpec` so
-the executor does not silently choose astronomy or instrument parameters.
+The smoke and larger study datasets are synthetic artifacts, not scientifically
+representative populations.  Every simulator choice is carried by a versioned
+specification so the executor does not silently choose astronomy or instrument
+parameters.
 """
 
 from __future__ import annotations
@@ -12,13 +13,14 @@ import math
 import re
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
     JsonValue,
+    TypeAdapter,
     field_validator,
     model_validator,
 )
@@ -461,6 +463,117 @@ class SlsimSmokeSpec(_ImmutableModel):
         return self
 
 
+def _study_source_population() -> SourcePopulationSpec:
+    return SourcePopulationSpec(
+        magnitudes=tuple(
+            BandMagnitudeRange(
+                band=band,
+                magnitude_ab=ClosedFloatRange(minimum=21.5, maximum=24.0),
+            )
+            for band in ("g", "r", "i")
+        )
+    )
+
+
+def _study_deflector_population() -> DeflectorPopulationSpec:
+    return DeflectorPopulationSpec(
+        magnitudes=tuple(
+            BandMagnitudeRange(
+                band=band,
+                magnitude_ab=ClosedFloatRange(minimum=18.0, maximum=21.0),
+            )
+            for band in ("g", "r", "i")
+        )
+    )
+
+
+def _study_rendering() -> LsstRenderingSpec:
+    return LsstRenderingSpec(bands=("g", "r", "i"))
+
+
+class SlsimStudySpec(_ImmutableModel):
+    """Synthetic multiband study input with bounded dynamic class counts."""
+
+    schema_version: Literal["ripple.scientist.slsim-study-spec.v1"] = (
+        "ripple.scientist.slsim-study-spec.v1"
+    )
+    purpose: Literal["scientific_training"] = "scientific_training"
+    scientific_status: Literal["synthetic_benchmark_only"] = (
+        "synthetic_benchmark_only"
+    )
+    supports_scientific_claims: Literal[False] = False
+    dataset_name: str = Field(
+        default="slsim-lens-nonlens-study", pattern=_IDENTIFIER_PATTERN
+    )
+    lens_count: int = Field(default=100, ge=3, le=10_000)
+    non_lens_count: int = Field(default=100, ge=3, le=10_000)
+    master_seed: int = Field(default=20260917, ge=0, le=4_294_967_295)
+    label_mapping: LabelMapping = Field(default_factory=LabelMapping)
+    cosmology: CosmologySpec = Field(default_factory=CosmologySpec)
+    source_population: SourcePopulationSpec = Field(
+        default_factory=_study_source_population
+    )
+    deflector_population: DeflectorPopulationSpec = Field(
+        default_factory=_study_deflector_population
+    )
+    lensing_geometry: LensingGeometrySpec = Field(default_factory=LensingGeometrySpec)
+    lens_selection: LensSelectionSpec = Field(default_factory=LensSelectionSpec)
+    rendering: LsstRenderingSpec = Field(default_factory=_study_rendering)
+    provenance: SimulationProvenance = Field(default_factory=SimulationProvenance)
+
+    @model_validator(mode="after")
+    def _cross_validate(self) -> "SlsimStudySpec":
+        if self.rendering.bands != ("g", "r", "i"):
+            raise ValueError("study rendering must use exactly ordered g, r, i bands")
+        expected_bands = set(self.rendering.bands)
+        source_bands = {item.band for item in self.source_population.magnitudes}
+        deflector_bands = {item.band for item in self.deflector_population.magnitudes}
+        if source_bands != expected_bands:
+            raise ValueError(
+                "source magnitude bands must exactly match rendering bands"
+            )
+        if deflector_bands != expected_bands:
+            raise ValueError(
+                "deflector magnitude bands must exactly match rendering bands"
+            )
+        if (
+            self.deflector_population.redshift.maximum
+            >= self.source_population.redshift.minimum
+        ):
+            raise ValueError("source redshift range must lie wholly behind deflectors")
+        if (
+            self.lensing_geometry.lens_source_radius_arcsec.maximum
+            >= self.deflector_population.einstein_radius_arcsec.minimum
+        ):
+            raise ValueError(
+                "study lens source offsets must remain below every configured Einstein radius"
+            )
+        half_field_arcsec = (
+            self.rendering.num_pix * self.rendering.pixel_scale_arcsec / 2.0
+        )
+        maximum_center_offset = max(
+            abs(self.lensing_geometry.deflector_center_component_arcsec.minimum),
+            abs(self.lensing_geometry.deflector_center_component_arcsec.maximum),
+        )
+        if (
+            maximum_center_offset
+            + self.lensing_geometry.non_lens_intruder_radius_arcsec.maximum
+            + self.source_population.angular_size_arcsec.maximum
+            >= half_field_arcsec
+        ):
+            raise ValueError(
+                "configured non-lens intruders do not fit inside the image field"
+            )
+        return self
+
+
+SlsimSpec = Annotated[
+    SlsimSmokeSpec | SlsimStudySpec,
+    Field(discriminator="schema_version"),
+]
+SLSIM_SPEC_ADAPTER = TypeAdapter(SlsimSpec)
+
+
 class ArrayArtifactRef(_ImmutableModel):
     """Digest plus array-safety metadata local to a simulation artifact."""
 
@@ -565,6 +678,12 @@ class SimulationSampleRecord(_ImmutableModel):
         return self
 
 
+class SlsimStudySampleRecord(SimulationSampleRecord):
+    """Sample metadata whose ordinal spans a dynamic study dataset."""
+
+    ordinal: int = Field(ge=0, le=19_999)
+
+
 class SimulationDatasetRecord(_ImmutableModel):
     schema_version: Literal["ripple.scientist.slsim-smoke-dataset.v1"] = (
         "ripple.scientist.slsim-smoke-dataset.v1"
@@ -626,6 +745,96 @@ class SimulationDatasetRecord(_ImmutableModel):
         return self
 
 
+class SlsimStudyDatasetRecord(_ImmutableModel):
+    """Content-addressed record for one dynamic synthetic SLSim study."""
+
+    schema_version: Literal["ripple.scientist.slsim-study-dataset.v1"] = (
+        "ripple.scientist.slsim-study-dataset.v1"
+    )
+    dataset_id: str = Field(pattern=r"^slsim-study-[0-9a-f]{16}$")
+    generated_at_utc: datetime
+    spec_sha256: str = Field(pattern=_SHA256_PATTERN)
+    spec: SlsimStudySpec
+    lens_count: int = Field(ge=3, le=10_000)
+    non_lens_count: int = Field(ge=3, le=10_000)
+    total_count: int = Field(ge=6, le=20_000)
+    effective_rendering: tuple[EffectiveBandRendering, ...] = Field(min_length=3)
+    runtime_components: tuple[RuntimeComponent, ...] = Field(min_length=1)
+    samples: tuple[SlsimStudySampleRecord, ...] = Field(
+        min_length=6, max_length=20_000
+    )
+    dataset_artifact: ArrayArtifactRef
+    manifest_relative_path: Literal["simulation_manifest.json"] = (
+        "simulation_manifest.json"
+    )
+    supports_scientific_claims: Literal[False] = False
+    scientific_use_allowed: Literal[False] = False
+    qualification_boundary: Literal[
+        "synthetic benchmark only; not a population, model-performance, or science validation"
+    ] = (
+        "synthetic benchmark only; not a population, model-performance, or science validation"
+    )
+
+    @field_validator("generated_at_utc")
+    @classmethod
+    def _aware_datetime(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("generated timestamp must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def _dataset_is_self_consistent(self) -> "SlsimStudyDatasetRecord":
+        if self.lens_count != self.spec.lens_count:
+            raise ValueError("recorded lens count disagrees with specification")
+        if self.non_lens_count != self.spec.non_lens_count:
+            raise ValueError("recorded non-lens count disagrees with specification")
+        if self.total_count != self.lens_count + self.non_lens_count:
+            raise ValueError("study total count disagrees with its class counts")
+        if len(self.samples) != self.total_count:
+            raise ValueError("sample records do not match total count")
+        if tuple(sample.ordinal for sample in self.samples) != tuple(
+            range(self.total_count)
+        ):
+            raise ValueError("sample ordinals must be contiguous and ordered")
+        if len({sample.sample_id for sample in self.samples}) != self.total_count:
+            raise ValueError("sample IDs must be unique")
+        if len({sample.sample_seed for sample in self.samples}) != self.total_count:
+            raise ValueError("per-sample seeds must be unique")
+        lens_count = sum(sample.class_name == "lens" for sample in self.samples)
+        non_lens_count = sum(sample.class_name == "non_lens" for sample in self.samples)
+        if (lens_count, non_lens_count) != (self.lens_count, self.non_lens_count):
+            raise ValueError("sample class counts disagree with dataset counts")
+        expected_sample_shape = (
+            len(self.spec.rendering.bands),
+            self.spec.rendering.num_pix,
+            self.spec.rendering.num_pix,
+        )
+        if any(
+            sample.bands != self.spec.rendering.bands
+            or sample.image_shape_chw != expected_sample_shape
+            for sample in self.samples
+        ):
+            raise ValueError("study sample bands or shapes disagree with specification")
+        if (
+            tuple(item.band for item in self.effective_rendering)
+            != self.spec.rendering.bands
+        ):
+            raise ValueError("effective rendering bands disagree with specification")
+        expected_dataset_shape = (self.total_count, *expected_sample_shape)
+        if self.dataset_artifact.array_shape != expected_dataset_shape:
+            raise ValueError(
+                "dataset artifact shape is inconsistent with specification"
+            )
+        return self
+
+
+SlsimDatasetRecord = Annotated[
+    SimulationDatasetRecord | SlsimStudyDatasetRecord,
+    Field(discriminator="schema_version"),
+]
+SLSIM_DATASET_RECORD_ADAPTER = TypeAdapter(SlsimDatasetRecord)
+
+
 def _canonical_model_payload_bytes(model: BaseModel) -> bytes:
     """Return canonical JSON payload bytes without presentation whitespace."""
 
@@ -640,7 +849,7 @@ def _canonical_model_payload_bytes(model: BaseModel) -> bytes:
     ).encode("utf-8")
 
 
-def canonical_spec_sha256(spec: SlsimSmokeSpec) -> str:
+def canonical_spec_sha256(spec: SlsimSpec) -> str:
     """Return the sole semantic identity used for a simulation specification."""
 
     return hashlib.sha256(_canonical_model_payload_bytes(spec)).hexdigest()

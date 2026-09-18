@@ -14,8 +14,15 @@ from typing import Any
 _LAZY_IMPORTS = {
     "SlsimDependencyError": (".slsim_backend", "SlsimDependencyError"),
     "SlsimGenerationError": (".slsim_backend", "SlsimGenerationError"),
+    "SlsimBackend": (".slsim_backend", "SlsimBackend"),
     "SlsimSmokeBackend": (".slsim_backend", "SlsimSmokeBackend"),
+    "load_slsim_dataset_record": (
+        ".slsim_backend",
+        "load_slsim_dataset_record",
+    ),
+    "load_slsim_spec": (".slsim_backend", "load_slsim_spec"),
     "load_smoke_spec": (".slsim_backend", "load_smoke_spec"),
+    "load_study_spec": (".slsim_backend", "load_study_spec"),
     "DatasetBuildError": (".dataset_builder", "DatasetBuildError"),
     "build_dataset_manifest": (".dataset_builder", "build_dataset_manifest"),
     "load_dataset_manifest": (".dataset_builder", "load_dataset_manifest"),

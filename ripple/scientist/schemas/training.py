@@ -52,6 +52,7 @@ class TrainingRunRecord(FrozenModel):
     epochs: tuple[EpochRecord, ...] = Field(min_length=1)
     best_epoch: int = Field(ge=1)
     best_validation: BinaryMetrics
+    best_checkpoint_train: BinaryMetrics | None = None
     weights_relative_path: str = Field(min_length=1, max_length=1024)
     weights_sha256: str = Field(pattern=SHA256_PATTERN)
     checkpoint_metadata_relative_path: str = Field(min_length=1, max_length=1024)
@@ -70,6 +71,11 @@ class TrainingRunRecord(FrozenModel):
         matching = [record for record in self.epochs if record.epoch == self.best_epoch]
         if len(matching) != 1 or matching[0].validation != self.best_validation:
             raise ValueError("best epoch and validation record disagree")
+        if (
+            self.best_checkpoint_train is not None
+            and self.best_checkpoint_train.sample_count < 1
+        ):
+            raise ValueError("checkpoint train evaluation must be non-empty")
         return self
 
 

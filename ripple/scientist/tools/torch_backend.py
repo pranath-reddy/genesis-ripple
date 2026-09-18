@@ -337,6 +337,16 @@ def train_candidate(
     if best_state is None:
         raise TrainingBackendError("training completed without a checkpoint state")
     model.load_state_dict(best_state)
+    best_checkpoint_train, _ = _evaluate(
+        np,
+        torch,
+        model,
+        train_x,
+        train_y,
+        device=device,
+        mean=mean,
+        std=std,
+    )
     weights_path = destination / "model.safetensors"
     save_file(best_state, str(weights_path))
     normalization = NormalizationRecord(
@@ -371,6 +381,7 @@ def train_candidate(
         epochs=tuple(history),
         best_epoch=best_epoch,
         best_validation=history[best_epoch - 1].validation,
+        best_checkpoint_train=best_checkpoint_train,
         weights_relative_path="model.safetensors",
         weights_sha256=sha256_file(weights_path),
         checkpoint_metadata_relative_path="checkpoint.json",

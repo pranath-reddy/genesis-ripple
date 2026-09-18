@@ -30,8 +30,8 @@ from .tools.dataset_builder import (  # noqa: E402
     load_dataset_manifest,
 )
 from .tools.slsim_backend import (  # noqa: E402
-    SlsimSmokeBackend,
-    load_smoke_spec,
+    SlsimBackend,
+    load_slsim_spec,
 )
 from .tools.torch_backend import (  # noqa: E402
     evaluate_selected_checkpoint,
@@ -124,8 +124,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             require_scientific_stack=arguments.require_scientific_stack,
         )
     elif arguments.command == "simulate":
-        record = SlsimSmokeBackend().generate(
-            spec=load_smoke_spec(arguments.spec),
+        record = SlsimBackend().generate(
+            spec=load_slsim_spec(arguments.spec),
             output_dir=arguments.output_dir,
         )
         result = {

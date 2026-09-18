@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,8 +75,12 @@ class ArchitecturePlannerRun:
     plan: ArchitectureSearchPlan
     called_tools: tuple[str, ...]
     request_count: int
+    tool_call_count: int
     input_tokens: int
+    cache_write_tokens: int
+    cache_read_tokens: int
     output_tokens: int
+    elapsed_seconds: float
 
 
 def build_architecture_planner(model: Any, *, retries: int = 1) -> Any:
@@ -161,6 +166,7 @@ def run_architecture_planner(
     agent = build_architecture_planner(
         build_bedrock_converse_model(resolved), retries=resolved.retries
     )
+    started = time.monotonic()
     result = agent.run_sync(
         (
             "Use every required tool in order. Propose a small, diverse search plan "
@@ -176,6 +182,7 @@ def run_architecture_planner(
             count_tokens_before_request=False,
         ),
     )
+    elapsed_seconds = time.monotonic() - started
     required = {
         "inspect_dataset_contract",
         "inspect_buildable_architecture_space",
@@ -193,6 +200,10 @@ def run_architecture_planner(
         plan=result.output,
         called_tools=tuple(dependencies.called_tools),
         request_count=usage.requests,
+        tool_call_count=usage.tool_calls,
         input_tokens=usage.input_tokens or 0,
+        cache_write_tokens=usage.cache_write_tokens or 0,
+        cache_read_tokens=usage.cache_read_tokens or 0,
         output_tokens=usage.output_tokens or 0,
+        elapsed_seconds=elapsed_seconds,
     )

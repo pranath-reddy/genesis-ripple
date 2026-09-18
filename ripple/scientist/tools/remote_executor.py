@@ -1022,9 +1022,9 @@ def run_remote_worker(
             or not 1 <= execution_timeout_seconds <= 31_536_000
         ):
             raise RemoteExecutionError("remote execution timeout is outside its bound")
-        if operation not in {"train", "evaluate"}:
+        if operation not in {"simulate", "train", "evaluate"}:
             raise RemoteExecutionError(
-                "execution timeouts are only supported for GPU-accounted operations"
+                "execution timeouts are only supported for bounded long operations"
             )
     source_root = source_sync.remote_source_root
     python_path = (

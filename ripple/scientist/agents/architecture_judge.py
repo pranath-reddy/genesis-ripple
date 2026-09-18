@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -64,8 +65,12 @@ class ArchitectureJudgeRun:
     verdict: ArchitectureJudgeVerdict
     called_tools: tuple[str, ...]
     request_count: int
+    tool_call_count: int
     input_tokens: int
+    cache_write_tokens: int
+    cache_read_tokens: int
     output_tokens: int
+    elapsed_seconds: float
 
 
 def build_architecture_judge(model: Any, *, retries: int = 1) -> Any:
@@ -146,6 +151,7 @@ def run_architecture_judge(
         plan=plan,
         shortlist_size=shortlist_size,
     )
+    started = time.monotonic()
     result = build_architecture_judge(
         build_bedrock_converse_model(resolved), retries=resolved.retries
     ).run_sync(
@@ -160,6 +166,7 @@ def run_architecture_judge(
             count_tokens_before_request=False,
         ),
     )
+    elapsed_seconds = time.monotonic() - started
     required = {
         "inspect_dataset_contract",
         "inspect_candidate_specs",
@@ -186,6 +193,10 @@ def run_architecture_judge(
         verdict=result.output,
         called_tools=tuple(dependencies.called_tools),
         request_count=usage.requests,
+        tool_call_count=usage.tool_calls,
         input_tokens=usage.input_tokens or 0,
+        cache_write_tokens=usage.cache_write_tokens or 0,
+        cache_read_tokens=usage.cache_read_tokens or 0,
         output_tokens=usage.output_tokens or 0,
+        elapsed_seconds=elapsed_seconds,
     )

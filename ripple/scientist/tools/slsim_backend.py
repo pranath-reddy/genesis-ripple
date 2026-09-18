@@ -1,4 +1,4 @@
-"""Deterministic SLSim executor for the ten-image integration smoke.
+"""Deterministic SLSim executor for bounded smoke and study datasets.
 
 This module deliberately imports astronomy dependencies only when ``generate``
 is called.  Importing the wider orchestrator therefore does not require SLSim,
@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import importlib.metadata
+import json
 import math
 import os
 import platform
 import random
 import shutil
 import tempfile
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -30,11 +32,18 @@ from ..schemas.simulation import (
     EplDeflectorParameters,
     LineOfSightParameters,
     RuntimeComponent,
+    SLSIM_DATASET_RECORD_ADAPTER,
+    SLSIM_SPEC_ADAPTER,
     SersicSourceParameters,
     SimulationDatasetRecord,
     SimulationParameters,
     SimulationSampleRecord,
+    SlsimDatasetRecord,
     SlsimSmokeSpec,
+    SlsimSpec,
+    SlsimStudyDatasetRecord,
+    SlsimStudySampleRecord,
+    SlsimStudySpec,
     canonical_model_bytes,
     canonical_spec_sha256,
     validate_finite_mapping,
@@ -109,6 +118,24 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _atomic_progress(path: Path, payload: dict[str, object]) -> None:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, sort_keys=True, indent=2, allow_nan=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def _artifact_ref(
@@ -202,7 +229,7 @@ def _json_scalar(value: Any) -> str | int | float | bool | None:
 
 
 def _effective_band_configuration(
-    deps: _Dependencies, spec: SlsimSmokeSpec
+    deps: _Dependencies, spec: SlsimSpec
 ) -> tuple[dict[str, Any], tuple[EffectiveBandRendering, ...]]:
     configs: dict[str, dict[str, Any]] = {}
     records: list[EffectiveBandRendering] = []
@@ -216,7 +243,7 @@ def _effective_band_configuration(
                 coadd_years=render.coadd_years,
             )
         )
-        # These values are the declared smoke contract, even if an upstream
+        # These values are the declared simulation contract, even if an upstream
         # ObservationConfig changes its defaults in a later dependency release.
         config["pixel_scale"] = render.pixel_scale_arcsec
         config["psf_type"] = render.psf_type
@@ -248,7 +275,7 @@ def _effective_band_configuration(
 def _build_system(
     *,
     deps: _Dependencies,
-    spec: SlsimSmokeSpec,
+    spec: SlsimSpec,
     class_name: Literal["lens", "non_lens"],
     rng: Any,
     cosmo: Any,
@@ -376,7 +403,7 @@ def _build_system(
 def _render_system(
     *,
     deps: _Dependencies,
-    spec: SlsimSmokeSpec,
+    spec: SlsimSpec,
     system: Any,
     band_configs: dict[str, dict[str, Any]],
 ) -> Any:
@@ -428,15 +455,15 @@ def _runtime_components(deps: _Dependencies) -> tuple[RuntimeComponent, ...]:
     )
 
 
-class SlsimSmokeBackend:
-    """Generate an exact ten-object lens/non-lens dataset with SLSim."""
+class SlsimBackend:
+    """Generate one versioned lens/non-lens dataset with SLSim."""
 
     def generate(
         self,
         *,
-        spec: SlsimSmokeSpec,
+        spec: SlsimSpec,
         output_dir: str | os.PathLike[str],
-    ) -> SimulationDatasetRecord:
+    ) -> SlsimDatasetRecord:
         deps = _load_dependencies()
         destination = Path(output_dir)
         if destination.exists() or destination.is_symlink():
@@ -444,9 +471,23 @@ class SlsimSmokeBackend:
                 f"refusing to overwrite existing simulation output: {destination}"
             )
         destination.parent.mkdir(parents=True, exist_ok=True)
+        progress_path = destination.parent / f"{destination.name}.progress.json"
+        if progress_path.exists() or progress_path.is_symlink():
+            raise FileExistsError(
+                f"refusing to overwrite existing simulation progress: {progress_path}"
+            )
 
         spec_sha256 = canonical_spec_sha256(spec)
-        dataset_id = f"slsim-smoke-{spec_sha256[:16]}"
+        is_smoke = isinstance(spec, SlsimSmokeSpec)
+        total_count = spec.lens_count + spec.non_lens_count
+        dataset_id = (
+            f"slsim-smoke-{spec_sha256[:16]}"
+            if is_smoke
+            else f"slsim-study-{spec_sha256[:16]}"
+        )
+        sample_record_type = (
+            SimulationSampleRecord if is_smoke else SlsimStudySampleRecord
+        )
         band_configs, effective_rendering = _effective_band_configuration(deps, spec)
         cosmo = deps.flat_lambda_cdm(
             H0=spec.cosmology.hubble_constant_km_s_mpc,
@@ -459,14 +500,28 @@ class SlsimSmokeBackend:
             )
         )
         moved = False
+        generated_count = 0
+        generation_started = time.monotonic()
         try:
+            _atomic_progress(
+                progress_path,
+                {
+                    "schema_version": "ripple.slsim-generation-progress.v1",
+                    "status": "starting",
+                    "dataset_id": dataset_id,
+                    "generated_images": 0,
+                    "total_images": total_count,
+                    "lens_images_generated": 0,
+                    "non_lens_images_generated": 0,
+                },
+            )
             samples_dir = stage / "samples"
             samples_dir.mkdir()
             image_arrays: list[Any] = []
             labels: list[int] = []
             sample_seeds: list[int] = []
             sample_ids: list[str] = []
-            records: list[SimulationSampleRecord] = []
+            records: list[SimulationSampleRecord | SlsimStudySampleRecord] = []
             used_seeds: set[int] = set()
 
             class_plan: list[tuple[Literal["lens", "non_lens"], int]] = [
@@ -536,7 +591,7 @@ class SlsimSmokeBackend:
                     else spec.label_mapping.non_lens
                 )
                 records.append(
-                    SimulationSampleRecord(
+                    sample_record_type(
                         sample_id=sample_id,
                         ordinal=ordinal,
                         class_name=class_name,
@@ -556,7 +611,47 @@ class SlsimSmokeBackend:
                 labels.append(numeric_label)
                 sample_seeds.append(sample_seed)
                 sample_ids.append(sample_id)
+                completed_count = ordinal + 1
+                generated_count = completed_count
+                if completed_count == total_count or completed_count % 10 == 0:
+                    elapsed = max(time.monotonic() - generation_started, 1e-9)
+                    images_per_second = completed_count / elapsed
+                    _atomic_progress(
+                        progress_path,
+                        {
+                            "schema_version": "ripple.slsim-generation-progress.v1",
+                            "status": "generating",
+                            "dataset_id": dataset_id,
+                            "generated_images": completed_count,
+                            "total_images": total_count,
+                            "lens_images_generated": min(
+                                completed_count, spec.lens_count
+                            ),
+                            "non_lens_images_generated": max(
+                                completed_count - spec.lens_count, 0
+                            ),
+                            "elapsed_seconds": elapsed,
+                            "images_per_second": images_per_second,
+                            "estimated_remaining_seconds": (
+                                total_count - completed_count
+                            )
+                            / images_per_second,
+                        },
+                    )
 
+            _atomic_progress(
+                progress_path,
+                {
+                    "schema_version": "ripple.slsim-generation-progress.v1",
+                    "status": "assembling_dataset",
+                    "dataset_id": dataset_id,
+                    "generated_images": total_count,
+                    "total_images": total_count,
+                    "lens_images_generated": spec.lens_count,
+                    "non_lens_images_generated": spec.non_lens_count,
+                    "elapsed_seconds": time.monotonic() - generation_started,
+                },
+            )
             stacked_images = deps.np.stack(image_arrays, axis=0).astype(
                 deps.np.float32, copy=False
             )
@@ -579,24 +674,48 @@ class SlsimSmokeBackend:
                 dtype=str(stacked_images.dtype),
             )
 
-            dataset_record = SimulationDatasetRecord(
-                dataset_id=dataset_id,
-                generated_at_utc=datetime.now(timezone.utc),
-                spec_sha256=spec_sha256,
-                spec=spec,
-                lens_count=spec.lens_count,
-                non_lens_count=spec.non_lens_count,
-                total_count=10,
-                effective_rendering=effective_rendering,
-                runtime_components=_runtime_components(deps),
-                samples=tuple(records),
-                dataset_artifact=dataset_ref,
-                manifest_relative_path="simulation_manifest.json",
-                supports_scientific_claims=False,
-            )
+            common_record_fields = {
+                "dataset_id": dataset_id,
+                "generated_at_utc": datetime.now(timezone.utc),
+                "spec_sha256": spec_sha256,
+                "spec": spec,
+                "lens_count": spec.lens_count,
+                "non_lens_count": spec.non_lens_count,
+                "total_count": total_count,
+                "effective_rendering": effective_rendering,
+                "runtime_components": _runtime_components(deps),
+                "samples": tuple(records),
+                "dataset_artifact": dataset_ref,
+                "manifest_relative_path": "simulation_manifest.json",
+                "supports_scientific_claims": False,
+            }
+            if is_smoke:
+                dataset_record: SlsimDatasetRecord = SimulationDatasetRecord(
+                    **common_record_fields
+                )
+            else:
+                dataset_record = SlsimStudyDatasetRecord(
+                    **common_record_fields,
+                    scientific_use_allowed=False,
+                )
             manifest_path = stage / dataset_record.manifest_relative_path
             with manifest_path.open("xb") as stream:
                 stream.write(canonical_model_bytes(dataset_record))
+
+            final_progress_path = stage / "generation_progress.json"
+            _atomic_progress(
+                final_progress_path,
+                {
+                    "schema_version": "ripple.slsim-generation-progress.v1",
+                    "status": "complete",
+                    "dataset_id": dataset_id,
+                    "generated_images": total_count,
+                    "total_images": total_count,
+                    "lens_images_generated": spec.lens_count,
+                    "non_lens_images_generated": spec.non_lens_count,
+                    "elapsed_seconds": time.monotonic() - generation_started,
+                },
+            )
 
             for artifact_path in stage.rglob("*"):
                 if artifact_path.is_file():
@@ -604,10 +723,49 @@ class SlsimSmokeBackend:
 
             os.replace(stage, destination)
             moved = True
+            progress_path.unlink(missing_ok=True)
             return dataset_record
+        except Exception:
+            _atomic_progress(
+                progress_path,
+                {
+                    "schema_version": "ripple.slsim-generation-progress.v1",
+                    "status": "failed",
+                    "dataset_id": dataset_id,
+                    "generated_images": generated_count,
+                    "total_images": total_count,
+                    "elapsed_seconds": time.monotonic() - generation_started,
+                    "safe_message": (
+                        "Generation failed; raw exception text is intentionally omitted."
+                    ),
+                },
+            )
+            raise
         finally:
             if not moved and stage.exists():
                 shutil.rmtree(stage)
+
+
+class SlsimSmokeBackend(SlsimBackend):
+    """Backward-compatible exact-ten-image smoke backend."""
+
+    def generate(
+        self,
+        *,
+        spec: SlsimSmokeSpec,
+        output_dir: str | os.PathLike[str],
+    ) -> SimulationDatasetRecord:
+        record = super().generate(spec=spec, output_dir=output_dir)
+        if not isinstance(record, SimulationDatasetRecord):
+            raise SlsimGenerationError("smoke backend produced a non-smoke record")
+        return record
+
+
+def load_slsim_spec(path: str | os.PathLike[str]) -> SlsimSpec:
+    """Load either supported strict specification by its schema version."""
+
+    spec_path = Path(path)
+    return SLSIM_SPEC_ADAPTER.validate_json(spec_path.read_bytes(), strict=True)
 
 
 def load_smoke_spec(path: str | os.PathLike[str]) -> SlsimSmokeSpec:
@@ -615,3 +773,21 @@ def load_smoke_spec(path: str | os.PathLike[str]) -> SlsimSmokeSpec:
 
     spec_path = Path(path)
     return SlsimSmokeSpec.model_validate_json(spec_path.read_bytes(), strict=True)
+
+
+def load_study_spec(path: str | os.PathLike[str]) -> SlsimStudySpec:
+    """Load a strict dynamic-study specification."""
+
+    spec_path = Path(path)
+    return SlsimStudySpec.model_validate_json(spec_path.read_bytes(), strict=True)
+
+
+def load_slsim_dataset_record(
+    path: str | os.PathLike[str],
+) -> SlsimDatasetRecord:
+    """Load either supported simulation manifest by its schema version."""
+
+    manifest_path = Path(path)
+    return SLSIM_DATASET_RECORD_ADAPTER.validate_json(
+        manifest_path.read_bytes(), strict=True
+    )

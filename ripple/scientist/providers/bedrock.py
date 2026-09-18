@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 import re
+import time
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -115,6 +117,20 @@ class BedrockTypedSmokeOutput(BaseModel):
     status: Literal["ready"]
     provider: Literal["aws-bedrock-converse"]
     task: Literal["typed-output-smoke"]
+
+
+@dataclass(frozen=True)
+class BedrockTypedSmokeRunRecord:
+    """Typed smoke output plus provider-reported usage and call latency."""
+
+    output: BedrockTypedSmokeOutput
+    requests: int
+    tool_calls: int
+    input_tokens: int
+    cache_write_tokens: int
+    cache_read_tokens: int
+    output_tokens: int
+    elapsed_seconds: float
 
 
 def expand_bedrock_agent_settings(
@@ -319,13 +335,59 @@ def run_bedrock_typed_output_smoke(
     return result.output
 
 
+def run_bedrock_typed_output_smoke_with_usage(
+    settings: BedrockAgentSettings | None = None,
+) -> BedrockTypedSmokeRunRecord:
+    """Perform the fixed smoke request and retain its aggregate usage evidence."""
+
+    resolved = settings or load_bedrock_agent_settings()
+    agent = build_bedrock_typed_smoke_agent(resolved)
+    try:
+        from pydantic_ai.usage import UsageLimits
+    except ImportError:
+        raise BedrockProviderConfigurationError(
+            code="pydantic_ai_unavailable",
+            message="PydanticAI is unavailable in the Python 3.12 agent environment.",
+        ) from None
+
+    started = time.monotonic()
+    result = agent.run_sync(
+        (
+            "Return status='ready', provider='aws-bedrock-converse', and "
+            "task='typed-output-smoke'."
+        ),
+        usage_limits=UsageLimits(
+            request_limit=resolved.request_limit,
+            tool_calls_limit=0,
+            input_tokens_limit=resolved.input_token_limit,
+            output_tokens_limit=resolved.output_token_limit,
+            total_tokens_limit=resolved.total_token_limit,
+            count_tokens_before_request=False,
+        ),
+    )
+    elapsed_seconds = time.monotonic() - started
+    usage = result.usage
+    return BedrockTypedSmokeRunRecord(
+        output=result.output,
+        requests=usage.requests,
+        tool_calls=usage.tool_calls,
+        input_tokens=usage.input_tokens,
+        cache_write_tokens=usage.cache_write_tokens,
+        cache_read_tokens=usage.cache_read_tokens,
+        output_tokens=usage.output_tokens,
+        elapsed_seconds=elapsed_seconds,
+    )
+
+
 __all__ = [
     "BedrockAgentSettings",
     "BedrockProviderConfigurationError",
     "BedrockRuntimeIdentity",
     "BedrockTypedSmokeOutput",
+    "BedrockTypedSmokeRunRecord",
     "build_bedrock_converse_model",
     "build_bedrock_typed_smoke_agent",
     "load_bedrock_agent_settings",
     "run_bedrock_typed_output_smoke",
+    "run_bedrock_typed_output_smoke_with_usage",
 ]

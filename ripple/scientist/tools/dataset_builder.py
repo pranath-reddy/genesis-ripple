@@ -16,10 +16,10 @@ from ..schemas.dataset import (
     SplitConfiguration,
 )
 from ..schemas.simulation import (
-    SimulationDatasetRecord,
     canonical_model_bytes,
     canonical_spec_sha256,
 )
+from .slsim_backend import load_slsim_dataset_record
 
 
 class DatasetBuildError(RuntimeError):
@@ -80,9 +80,7 @@ def build_dataset_manifest(
     if not root.is_dir() or root.is_symlink():
         raise DatasetBuildError("simulation root must be a real directory")
     simulation_manifest_path = _resolve_safe(root, "simulation_manifest.json")
-    simulation = SimulationDatasetRecord.model_validate_json(
-        simulation_manifest_path.read_bytes(), strict=True
-    )
+    simulation = load_slsim_dataset_record(simulation_manifest_path)
     expected_spec_sha256 = canonical_spec_sha256(simulation.spec)
     if simulation.spec_sha256 != expected_spec_sha256:
         # Compatibility is deliberately reader-only: completed campaigns written
@@ -99,6 +97,8 @@ def build_dataset_manifest(
     if simulation.supports_scientific_claims:
         raise DatasetBuildError(
             "smoke backend unexpectedly authorized scientific claims"
+            if simulation.spec.purpose == "integration_smoke"
+            else "study backend unexpectedly authorized scientific claims"
         )
 
     records: list[SampleRecord] = []
@@ -149,6 +149,18 @@ def build_dataset_manifest(
         validation_sample_ids=tuple(non_lens[1] + lens[1]),
         test_sample_ids=tuple(non_lens[2] + lens[2]),
     )
+    qualification_notes = (
+        (
+            simulation.qualification_boundary,
+            "Frozen split membership is for integration plumbing only.",
+        )
+        if simulation.spec.purpose == "integration_smoke"
+        else (
+            simulation.qualification_boundary,
+            "Synthetic benchmark results do not authorize population, model-performance, or scientific claims.",
+            "Frozen split membership is for synthetic benchmark plumbing only.",
+        )
+    )
     manifest = DatasetManifest(
         dataset_id=simulation.dataset_id,
         purpose=simulation.spec.purpose,
@@ -163,10 +175,7 @@ def build_dataset_manifest(
         samples=tuple(records),
         splits=splits,
         scientific_use_allowed=False,
-        qualification_notes=(
-            simulation.qualification_boundary,
-            "Frozen split membership is for integration plumbing only.",
-        ),
+        qualification_notes=qualification_notes,
     )
     ArtifactStore(root).write_json("dataset_manifest.json", manifest)
     return manifest

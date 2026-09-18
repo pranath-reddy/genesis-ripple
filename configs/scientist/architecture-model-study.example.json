@@ -1,0 +1,202 @@
+{
+  "schema_version": "ripple.architecture-model-study-config.v1",
+  "study_id": "ripple-slsim-gri-study-v1",
+  "title": "RIPPLe synthetic g/r/i architecture and Bedrock model study",
+  "output_root": "outputs/scientist-studies",
+  "simulation_spec": "slsim-study.example.json",
+  "pricing_snapshot": "bedrock-pricing-2026-09-18.json",
+  "remote": {
+    "host": "raghu@10.106.26.182",
+    "python": "/home/raghu/venvs/research/bin/python",
+    "remote_root": "/home/raghu/ripple-scientist-study-v1",
+    "connect_timeout_seconds": 10
+  },
+  "bedrock_profile_name": "ripple-bedrock",
+  "bedrock_region": "ap-south-1",
+  "bedrock_models": [
+    {
+      "model_id": "in.openai.gpt-5.6-luna",
+      "pricing_model_id": "in.openai.gpt-5.6-luna",
+      "inference_profile_id": "in.openai.gpt-5.6-luna",
+      "display_name": "GPT-5.6 Luna",
+      "provider": "OpenAI",
+      "category": "paid_api"
+    },
+    {
+      "model_id": "in.openai.gpt-5.6-terra",
+      "pricing_model_id": "in.openai.gpt-5.6-terra",
+      "inference_profile_id": "in.openai.gpt-5.6-terra",
+      "display_name": "GPT-5.6 Terra",
+      "provider": "OpenAI",
+      "category": "paid_api"
+    },
+    {
+      "model_id": "global.openai.gpt-5.6-sol",
+      "pricing_model_id": "global.openai.gpt-5.6-sol",
+      "inference_profile_id": "global.openai.gpt-5.6-sol",
+      "display_name": "GPT-5.6 Sol",
+      "provider": "OpenAI",
+      "category": "paid_api"
+    },
+    {
+      "model_id": "google.gemma-3-27b-it",
+      "pricing_model_id": "google.gemma-3-27b-it",
+      "display_name": "Gemma 3 27B IT",
+      "provider": "Google",
+      "category": "paid_api"
+    },
+    {
+      "model_id": "apac.amazon.nova-lite-v1:0",
+      "pricing_model_id": "apac.amazon.nova-lite-v1:0",
+      "inference_profile_id": "apac.amazon.nova-lite-v1:0",
+      "display_name": "Amazon Nova Lite",
+      "provider": "Amazon",
+      "category": "paid_api"
+    },
+    {
+      "model_id": "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
+      "pricing_model_id": "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
+      "inference_profile_id": "apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
+      "display_name": "Claude 3.7 Sonnet",
+      "provider": "Anthropic",
+      "category": "paid_api"
+    },
+    {
+      "model_id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "pricing_model_id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "inference_profile_id": "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+      "display_name": "Claude Haiku 4.5",
+      "provider": "Anthropic",
+      "category": "paid_api"
+    },
+    {
+      "model_id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "pricing_model_id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "inference_profile_id": "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "display_name": "Claude Sonnet 4.5",
+      "provider": "Anthropic",
+      "category": "paid_api"
+    }
+  ],
+  "primary_planner_model_id": "in.openai.gpt-5.6-luna",
+  "tuning_model_id": "in.openai.gpt-5.6-luna",
+  "arms": [
+    {
+      "arm_id": "c4-equivariant",
+      "display_name": "C4 Equivariant",
+      "role": "searched",
+      "candidate": {
+        "candidate_id": "c4-equivariant",
+        "name": "c4-equivariant",
+        "family": "equivariant",
+        "depths": [1, 1],
+        "widths": [16, 32],
+        "physics_informed": true,
+        "rationale": "A compact rotation-equivariant reference for a controlled synthetic comparison."
+      }
+    },
+    {
+      "arm_id": "mlp-mixer",
+      "display_name": "MLP Mixer",
+      "role": "searched",
+      "candidate": {
+        "candidate_id": "mlp-mixer",
+        "name": "mlp-mixer",
+        "family": "mlpmixer",
+        "depths": [1, 1],
+        "widths": [64, 128],
+        "physics_informed": false,
+        "rationale": "A token/channel mixing family with no convolutional inductive bias."
+      }
+    },
+    {
+      "arm_id": "conv-attn",
+      "display_name": "Convolution plus Attention",
+      "role": "searched",
+      "candidate": {
+        "candidate_id": "conv-attn",
+        "name": "conv-attn",
+        "family": "hybrid",
+        "depths": [1, 2],
+        "widths": [32, 128],
+        "physics_informed": false,
+        "rationale": "A convolutional stem followed by bounded attention blocks."
+      }
+    },
+    {
+      "arm_id": "cnn-medium-s4",
+      "display_name": "CNN Medium S4",
+      "role": "searched",
+      "candidate": {
+        "candidate_id": "cnn-medium-s4",
+        "name": "cnn-medium-s4",
+        "family": "cnn",
+        "depths": [2, 2, 2, 2],
+        "widths": [32, 64, 128, 256],
+        "physics_informed": false,
+        "rationale": "A deeper conventional convolutional arm spanning four stages."
+      }
+    },
+    {
+      "arm_id": "vit-tiny",
+      "display_name": "ViT Tiny",
+      "role": "searched",
+      "candidate": {
+        "candidate_id": "vit-tiny",
+        "name": "vit-tiny",
+        "family": "vit",
+        "depths": [3, 3],
+        "widths": [96, 192],
+        "physics_informed": false,
+        "rationale": "A small vision transformer arm for a non-convolutional comparison."
+      }
+    },
+    {
+      "arm_id": "resnet34",
+      "display_name": "ResNet-34 Baseline",
+      "role": "trained_baseline",
+      "candidate": {
+        "candidate_id": "resnet34",
+        "name": "resnet34",
+        "family": "resnet",
+        "depths": [3, 4, 6, 3],
+        "widths": [64, 128, 256, 512],
+        "physics_informed": false,
+        "rationale": "The pre-registered trained ResNet-34 reference baseline."
+      }
+    }
+  ],
+  "baseline_arm_id": "resnet34",
+  "base_training": {
+    "loss": "cross_entropy",
+    "optimizer": "adamw",
+    "learning_rate": 0.0003,
+    "batch_size": 32,
+    "epochs": 3,
+    "weight_decay": 0.0001,
+    "lr_scheduler": "cosine",
+    "dropout": 0.1,
+    "augment_d4": false,
+    "seed": 20260917,
+    "require_cuda": true
+  },
+  "minimum_tuning_iterations": 2,
+  "maximum_tuning_iterations": 2,
+  "minimum_validation_balanced_accuracy_for_early_stop": 0.70,
+  "maximum_generalization_gap_for_early_stop": 0.05,
+  "minimum_validation_improvement": 0.005,
+  "random_seeds": [20260917],
+  "architecture_shortlist_size": 2,
+  "remote_simulation_timeout_seconds": 7200,
+  "remote_training_timeout_seconds": 1800,
+  "remote_evaluation_timeout_seconds": 600,
+  "maximum_provider_requests": 256,
+  "maximum_measured_tokens": 2000000,
+  "maximum_rate_based_cost_usd": 5.0,
+  "maximum_training_runs": 12,
+  "maximum_remote_wall_seconds": 21600.0,
+  "maximum_local_storage_bytes": 12884901888,
+  "maximum_transfer_bytes": 8589934592,
+  "execute_remote": true,
+  "scientific_performance_claim_allowed": false
+}
