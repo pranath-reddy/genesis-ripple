@@ -1,0 +1,25 @@
+{
+  "schema_version": "ripple.mriganka-dp2-request.v2",
+  "branch": "mriganka_dp2",
+  "request_id": "mriganka-dp2-gri-technical-integration",
+  "bands": [
+    "g",
+    "r",
+    "i"
+  ],
+  "model_manifest": "../../ripple/modeling/manifests/mriganka-enn-three-band-dp2.provisional.v1.json",
+  "inference_bundle_manifest": "../../ripple/inference/manifests/mriganka-enn-sda-epoch20.hsc-eval.v1.json",
+  "checkpoint_root": "../../local_inputs/eval_share/Output/ENN/weights/sda",
+  "target": {
+    "ra_deg": 53.1246023,
+    "dec_deg": -27.7404715
+  },
+  "budget": {
+    "max_gpu_seconds": 0,
+    "max_llm_requests": 0,
+    "max_simulations": 0,
+    "max_storage_bytes": 268435456,
+    "max_tool_calls": 7,
+    "max_training_runs": 0
+  }
+}

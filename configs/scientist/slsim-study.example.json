@@ -1,0 +1,69 @@
+{
+  "schema_version": "ripple.scientist.slsim-study-spec.v1",
+  "purpose": "scientific_training",
+  "scientific_status": "synthetic_benchmark_only",
+  "supports_scientific_claims": false,
+  "dataset_name": "slsim-lens-nonlens-study",
+  "lens_count": 1500,
+  "non_lens_count": 1500,
+  "master_seed": 20260917,
+  "source_population": {
+    "magnitudes": [
+      {
+        "band": "g",
+        "magnitude_ab": {
+          "minimum": 21.5,
+          "maximum": 24.0
+        }
+      },
+      {
+        "band": "r",
+        "magnitude_ab": {
+          "minimum": 21.5,
+          "maximum": 24.0
+        }
+      },
+      {
+        "band": "i",
+        "magnitude_ab": {
+          "minimum": 21.5,
+          "maximum": 24.0
+        }
+      }
+    ]
+  },
+  "deflector_population": {
+    "magnitudes": [
+      {
+        "band": "g",
+        "magnitude_ab": {
+          "minimum": 18.0,
+          "maximum": 21.0
+        }
+      },
+      {
+        "band": "r",
+        "magnitude_ab": {
+          "minimum": 18.0,
+          "maximum": 21.0
+        }
+      },
+      {
+        "band": "i",
+        "magnitude_ab": {
+          "minimum": 18.0,
+          "maximum": 21.0
+        }
+      }
+    ]
+  },
+  "rendering": {
+    "bands": [
+      "g",
+      "r",
+      "i"
+    ],
+    "num_pix": 64,
+    "pixel_scale_arcsec": 0.2
+  }
+}

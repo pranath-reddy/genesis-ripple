@@ -1,239 +1,133 @@
-# RIPPLe - Rubin Image Preparation and Processing Lensing Engine
+# RIPPLe
 
-**Production-scale pipeline bridging LSST data access with DeepLense deep learning workflows**
+RIPPLe is a provenance-first pipeline for preparing Rubin observations for
+strong-lens research. It keeps survey retrieval, deterministic numerical work,
+model qualification, and agent decisions behind separate typed interfaces.
 
-[![LSST Version](https://img.shields.io/badge/LSST-v28.0.1%20|%20v29.1.1-blue)](lsst_stack/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.4.1-orange)](environment.yml)
-[![Python](https://img.shields.io/badge/Python-3.11%20|%203.12-blue)](environment.yml)
-[![License](https://img.shields.io/badge/License-MIT-green)]()
+The repository contains two data-access paths:
 
-## Project Overview
+- the original LSST Science Pipelines/Butler utilities under `ripple.data_access`;
+- a lightweight external Rubin DP2 path under `ripple.dp2`, authenticated only
+  through the local `RSP_TOKEN` environment variable.
 
-RIPPLe (Rubin Image Preparation and Processing Lensing engine) is a comprehensive data processing pipeline designed to interface the Large Synoptic Survey Telescope (LSST) data products with DeepLense machine learning applications. This pipeline enables efficient data retrieval, preprocessing, and adaptation for gravitational lensing analysis at unprecedented scale.
+## Current implementation
 
-### Key Applications
+| Area | State |
+| --- | --- |
+| DP2 discovery and cutout retrieval | Implemented for one bounded `LSST.DP2` r-band deep-coadd request |
+| Observation package | Image, variance, mask, WCS, calibration metadata, identity, checksums, and explicit PSF status |
+| Scientific preprocessing | Deterministic 64 x 64 single-channel Mriganka adapter with a saved tensor, manifest, and QA preview |
+| Mriganka inference | Blocked pending the exact encoder/classifier checkpoints and missing training-domain metadata |
+| Researcher repository analysis | Read-only PydanticAI route over a bounded, immutable code/config snapshot |
+| Simulation and training smoke | Typed ten-image SLSim campaign, architecture selection, remote worker execution, and technical report |
+| LensCat | Deterministic final-stage catalog matching; not used as a classifier |
 
-1. **Automated Strong Lens Finding** - Process ~100,000 expected lenses from LSST
-2. **Dark Matter Substructure Classification** - Extract physics insights from lensing patterns
-3. **Image Super-Resolution** - Enhance ground-based observations using deep learning
+The provisional Mriganka transform is available for integration work, but its
+output is not a scientifically qualified classifier input yet. The checked-in
+manifest therefore permits preprocessing and rejects model execution.
 
-### Architecture Overview
+## Layout
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           RIPPLe Pipeline                                │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────┐    ┌─────────┐ │
-│  │Data Ingestion│───▶│ Preprocessing │───▶│ML Inference│───▶│ Output  │ │
-│  │   (Butler)   │    │   Pipeline    │    │  (Models)  │    │Handler  │ │
-│  └─────────────┘    └──────────────┘    └────────────┘    └─────────┘ │
-│         │                    │                   │               │       │
-│         ▼                    ▼                   ▼               ▼       │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────┐    ┌─────────┐ │
-│  │LSST Butler  │    │ Image/WCS    │    │ DeepLense  │    │Results  │ │
-│  │Data Products│    │ Processing   │    │  PyTorch   │    │Storage  │ │
-│  └─────────────┘    └──────────────┘    └────────────┘    └─────────┘ │
-│                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐ │
-│  │                    Orchestrator & Configuration                    │ │
-│  └───────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────┘
+```text
+ripple/
+  dp2/             Rubin DP2 client, retrieval, and observation packaging
+  preprocessing/   deterministic transforms and artifact verification
+  modeling/        model manifests, adapter registry, and source-analysis agent
+  scientist/       typed routes, agents, tools, workflows, and worker entry point
+  data_access/     original Butler-based data access
+configs/scientist/ portable request and smoke-campaign examples
 ```
 
-### Data Flow Summary
-```
-Input → LsstDataFetcher → Preprocessor → ModelInterface → ResultHandler → Output
-  ↑                                                                          ↓
-  └────────────────────── Orchestrator (coordinates flow) ──────────────────┘
-```
+The scientist subsystem follows a small control-plane pattern: Pydantic models
+define the contracts, ordinary Python tools perform side effects, PydanticAI
+agents choose only allowlisted analysis actions, and workflow code owns state,
+budgets, hashes, and stopping conditions. Researcher-supplied code is treated as
+untrusted text and is not imported or executed by the repository-analysis route.
 
-## Quick Start
+## Environments
 
-### Prerequisites
-
-- Linux system with CUDA support (optional but recommended)
-- Anaconda/Miniconda installed
-- 32GB+ RAM recommended
-- NVIDIA GPU with 8GB+ VRAM (optional)
-
-### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/ML4SCI/DeepLense_Data_Processing_Pipeline_for_the_LSST.git
-cd DeepLense_Data_Processing_Pipeline_for_the_LSST
-```
-
-2. **Set up LSST Science Pipelines**
-
-We provide multiple LSST versions for compatibility:
+Python 3.12 is the supported control-plane interpreter. Dependencies are split
+by execution boundary:
 
 ```bash
-# Option 1: Use stable v28.0.1
-source lsst_stack/loadLSST.bash
-setup lsst_distrib
-
-# Option 2: Use latest v29.1.1 (recommended)
-source lsst_stack3/loadLSST.bash
-setup lsst_distrib
+python3.12 -m venv .venv-agent
+source .venv-agent/bin/activate
+python -m pip install -r requirements-scientist-agent.txt
 ```
 
-3. **Verify installation**
+- `requirements-dp2.txt`: external DP2 retrieval and package construction
+- `requirements-m3.txt`: DP2 plus preprocessing and visualization
+- `requirements-agent.txt`: OpenAI-backed onboarding support
+- `requirements-scientist-agent.txt`: DP2/M3 plus Bedrock-backed orchestration
+- `requirements-scientist-worker.txt`: offline numerical worker dependencies
+
+The worker image must supply a compatible PyTorch/CUDA installation. Its fully
+resolved Python 3.12 Linux lock is stored at
+`ripple/scientist/locks/requirements-worker-linux-x86_64-py312.lock`.
+
+## DP2 to preprocessing
+
+Credentials stay outside the repository. Export `RSP_TOKEN` in the current
+shell, then run:
+
 ```bash
-python manual_tests/run_tests.py
+python -m ripple.dp2.cli --output-root outputs/dp2_smoke
+python -m ripple.dp2.package_cli --output-root outputs/dp2_m2
+python -m ripple.preprocessing.cli \
+  --package outputs/dp2_m2/<run-id>/package.json \
+  --output-root outputs/m3_mriganka
+python -m ripple.modeling.cli list
 ```
 
-### Basic Usage
+All output roots are ignored by Git. Retrieval receipts deliberately exclude
+the token, authorization headers, and access URLs.
 
-```python
-from ripple.data_access import LsstDataFetcher
-from ripple.pipeline import PipelineOrchestrator
+## Agentic routes
 
-# Initialize pipeline
-config_path = "config_demo.yaml"
-pipeline = PipelineOrchestrator(config_path)
+The dispatcher exposes three request types:
 
-# Process a list of targets
-targets = [
-    {"ra": 150.1, "dec": 2.3, "name": "lens_001"},
-    {"ra": 150.2, "dec": 2.4, "name": "lens_002"}
-]
+1. `mriganka_dp2` verifies an existing observation package and runs the
+   registered preprocessing adapter. It stops at the closed inference gate.
+2. `researcher_model` snapshots supplied code/config files, lets an agent plan
+   and investigate through read-only tools, and returns evidence-linked
+   integration findings.
+3. `simulation_training` runs the bounded SLSim and GPU-worker smoke campaign.
 
-results = pipeline.process_targets(targets)
-```
+Inspect a request without performing network, model, or remote work:
 
-## Project Structure
-
-```
-DeepLense_Data_Processing_Pipeline_for_the_LSST/
-├── ripple/                    # Main Python package
-│   ├── butler/                # Butler wrapper utilities
-│   ├── butler_repo/           # Repository management
-│   ├── data_access/           # Data fetching and caching
-│   ├── preprocessing/         # Image preprocessing
-│   ├── pipeline/              # Pipeline orchestration
-│   ├── models/                # Model interfaces
-│   └── utils/                 # Utility functions
-├── lsst_stack/                # LSST v28.0.1
-├── lsst_stack2/               # LSST v29.0.x
-├── lsst_stack3/               # LSST v29.1.1 (latest)
-├── manual_tests/              # Test suite
-├── demo_data/                 # Sample Butler repository
-├── rc2_subset/                # RC2 subset data
-├── testdata_decam/            # DECam test data
-├── presentations/             # Project presentations
-└── config_demo.yaml           # Example configuration
-```
-
-## Core Components
-
-### 1. Data Access Layer (`ripple.data_access`)
-
-Efficient data retrieval from LSST Butler repositories with advanced features:
-
-- **Smart caching** for repeated queries
-- **Coordinate conversion** (RA/Dec to tract/patch)
-- **Batch retrieval** optimization
-- **Error handling** with retry logic
-- **Performance monitoring**
-
-```python
-from ripple.data_access import LsstDataFetcher
-
-fetcher = LsstDataFetcher(butler_config)
-cutout = fetcher.fetch_cutout(
-    ra=150.1, 
-    dec=2.3, 
-    size=64,
-    filters=['g', 'r', 'i']
-)
-```
-
-### 2. Preprocessing Module (`ripple.preprocessing`)
-
-Standardized preprocessing pipeline for LSST images:
-
-- **WCS-aware cutout extraction**
-- **Multi-band alignment and stacking**
-- **Flexible normalization** (MinMax, ZScore, Asinh)
-- **PSF matching** (optional)
-- **Background subtraction**
-
-### 3. Pipeline Orchestrator (`ripple.pipeline`)
-
-End-to-end workflow management:
-
-- **Batch processing** with GPU optimization
-- **Error recovery** and fault tolerance
-- **Progress tracking** and logging
-- **Configurable processing chains**
-
-### 4. Model Integration (`ripple.models`)
-
-Unified interface for DeepLense models:
-
-- **Lens detection** (binary classification)
-- **Substructure analysis** (multi-class)
-- **Super-resolution** (2x-4x upsampling)
-- **Custom model support**
-
-## Configuration
-
-RIPPLe uses YAML configuration files for flexibility:
-
-```yaml
-# config_demo.yaml
-data:
-  butler:
-    repo: "./demo_data/pipelines_check-29.1.1/DATA_REPO"
-    collections: ["HSC/RC2/defaults"]
-  dataset_type: "deepCoadd"
-  filters: ["g", "r", "i"]
-  
-preprocessing:
-  normalization: "minmax"
-  cutout_size: 64
-  
-models:
-  task: "lens_finding"
-  checkpoint: "models/lens_finder.pth"
-  device: "cuda:0"
-  
-pipeline:
-  batch_size: 32
-  num_workers: 4
-```
-
-## Testing
-
-### Run all tests
 ```bash
-python manual_tests/run_tests.py
+python -m ripple.scientist.router_cli plan \
+  --request configs/scientist/researcher-model.example.json \
+  --researcher-output-root outputs/researcher-runs
 ```
 
-### Individual test modules
+For a live researcher run, copy the example into the ignored `configs/local/`
+directory, set its absolute source path, configure the non-secret
+`RIPPLE_BEDROCK_PROFILE`, `RIPPLE_BEDROCK_REGION`, and
+`RIPPLE_BEDROCK_MODEL_ID` values, and use the `run` subcommand.
+
+The simulation examples contain placeholder SSH deployment values. Copy them
+to `configs/local/`, replace the host and dedicated worker paths, and validate
+before execution:
+
 ```bash
-python manual_tests/01_environment_setup.py      # Environment verification
-python manual_tests/02_configuration_tests.py    # Configuration validation
-python manual_tests/03_butler_connection_tests.py # Butler connectivity
-python manual_tests/04_data_availability_tests.py # Data access tests
+python -m ripple.scientist.campaign_cli validate \
+  --configuration configs/local/campaign.json
 ```
 
-### Example test scripts
-```bash
-python test_butler_creator.py        # Test Butler repository creation
-python test_fixed_pipeline.py        # Test end-to-end pipeline
-python test_raw_detection.py         # Test raw data detection
-```
+## Scientific boundaries
 
+- Agent output cannot override a model manifest, preprocessing recipe,
+  checkpoint identity, or qualification gate.
+- A sharper image, higher score, or catalog association is not confirmation of
+  a gravitational lens.
+- LensCat is consulted only after real candidate evidence exists and no-match is
+  never interpreted as a non-lens label.
+- Synthetic smoke metrics are integration evidence, not survey-performance
+  measurements.
+- Every promoted classifier still needs held-out, Rubin-compatible calibration
+  and selection-effect evaluation.
 
-## Project Timeline
-
-- **Phase 0** (Completed): Environment Setup & Infrastructure
-- **Phase 1** (Completed): Data Access Layer & Butler Integration
-- **Phase 2** (In Progress): Preprocessing Pipeline & Model Integration
-- **Phase 3** (Upcoming): Production Deployment & Optimization
-
-
-
+Vendored scientific sources and the design precedents are recorded in
+`ripple/scientist/THIRD_PARTY_NOTICES.txt` and
+`ripple/scientist/locks/source-revisions.json`.

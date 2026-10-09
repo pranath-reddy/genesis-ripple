@@ -1,0 +1,17 @@
+{
+  "branch": "simulation_training",
+  "request_id": "slsim-training-smoke",
+  "simulation_spec": "slsim-smoke.json",
+  "output_root": "outputs/scientist-campaigns",
+  "gpu_host": "researcher@gpu.example.org",
+  "gpu_python": "/srv/ripple/venv/bin/python",
+  "gpu_remote_root": "/srv/ripple/worker",
+  "budget": {
+    "max_gpu_seconds": 900,
+    "max_llm_requests": 24,
+    "max_simulations": 10,
+    "max_storage_bytes": 2147483648,
+    "max_tool_calls": 32,
+    "max_training_runs": 2
+  }
+}

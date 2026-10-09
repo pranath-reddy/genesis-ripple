@@ -121,7 +121,21 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+.aws/
+.rsp-token
+.rsp_token
+rsp-token.txt
+rsp_token.txt
 .venv
+.venv*/
+.venv-agent/
+.uv-cache-agent/
+/configs/local/
+/local_inputs/
+/DeepLense-AI-Scientist/
+/vendor/slsim/
+/vendor/JAXtronomy/
 env/
 venv/
 ENV/
@@ -177,7 +191,19 @@ testdata_decam/
 # FITS files (can be large)
 *.fits
 *.fits.fz
+*.fits.gz
 *.fit
+
+# Generated model and array artifacts
+*.npy
+*.npz
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.h5
+*.hdf5
 
 
 # Temporary files
@@ -199,8 +225,10 @@ logs/
 results/
 outputs/
 checkpoints/
-models/*.pth
-models/*.pt
+
+# Vendored SLSim fixtures are package data, not generated run artifacts.
+!ripple/scientist/vendor/slsim/**/*.fits
+!ripple/scientist/vendor/slsim/**/*.pkl
 
 # Notebook outputs
 notebook/*.html

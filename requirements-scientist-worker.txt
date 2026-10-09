@@ -1,0 +1,13 @@
+# Offline Python 3.12 worker stack for deterministic SLSim execution and CUDA training.
+# SLSim and JAXtronomy are pinned source snapshots under ripple/scientist/vendor.
+# Fully resolved Linux x86_64 lock: ripple/scientist/locks/requirements-worker-linux-x86_64-py312.lock
+# PyTorch and the matching CUDA runtime are supplied by the worker image and checked at runtime.
+numpy==2.3.5
+astropy==8.0.1
+lenstronomy==1.14.2
+pydantic==2.13.5
+safetensors==0.6.2
+mpmath==1.3.0
+pandas==3.0.1
+colossus==1.4.0
+speclite==0.20

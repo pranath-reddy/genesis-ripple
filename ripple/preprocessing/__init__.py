@@ -1,9 +1,16 @@
-"""
-Preprocessing module for RIPPLe.
+"""Deterministic scientific preprocessing for RIPPLe model inputs."""
 
-This module will contain image preprocessing functionality for Phase 2.
-"""
+from .artifact_io import LoadedMrigankaModelInput, load_model_input_package
+from .contracts import Mriganka64Recipe, MrigankaModelInputPackage
+from .service import Mriganka64Preprocessor
 
-class Preprocessor:
-    """Placeholder for preprocessing functionality."""
-    pass
+Preprocessor = Mriganka64Preprocessor
+
+__all__ = [
+    "LoadedMrigankaModelInput",
+    "Mriganka64Preprocessor",
+    "Mriganka64Recipe",
+    "MrigankaModelInputPackage",
+    "Preprocessor",
+    "load_model_input_package",
+]

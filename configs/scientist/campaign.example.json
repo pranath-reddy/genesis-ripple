@@ -1,0 +1,37 @@
+{
+  "schema_version": "ripple.simulation-campaign.v1",
+  "request": {
+    "branch": "simulation_training",
+    "request_id": "slsim-training-smoke",
+    "simulation_spec": "slsim-smoke.json",
+    "output_root": "outputs/scientist-campaigns",
+    "gpu_host": "researcher@gpu.example.org",
+    "gpu_python": "/srv/ripple/venv/bin/python",
+    "gpu_remote_root": "/srv/ripple/worker",
+    "budget": {
+      "max_gpu_seconds": 900,
+      "max_llm_requests": 24,
+      "max_simulations": 10,
+      "max_storage_bytes": 2147483648,
+      "max_tool_calls": 32,
+      "max_training_runs": 2
+    }
+  },
+  "architecture_shortlist_size": 2,
+  "training": {
+    "augment_d4": false,
+    "batch_size": 2,
+    "dropout": 0.1,
+    "epochs": 2,
+    "learning_rate": 0.0003,
+    "loss": "cross_entropy",
+    "lr_scheduler": "cosine",
+    "optimizer": "adamw",
+    "require_cuda": true,
+    "seed": 20260917,
+    "weight_decay": 0.0001
+  },
+  "architecture_implementation": "ripple-native-model-builders",
+  "execute_remote": true,
+  "smoke_only": true
+}

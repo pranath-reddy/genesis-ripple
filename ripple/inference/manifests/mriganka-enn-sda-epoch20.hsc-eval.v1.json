@@ -1,0 +1,169 @@
+{
+  "schema_version": "ripple.mriganka-enn-bundle.v1",
+  "bundle_id": "mriganka-enn-sda-epoch20-hsc-eval-v1",
+  "model_id": "deeplense.mriganka.enn-sda",
+  "model_version": "sda-epoch-20-iteration-0",
+  "architecture_id": "mriganka-enn-d4-concrete-v1",
+  "encoder": {
+    "role": "encoder",
+    "filename": "ENN_encoder_sda_epoch_20_0.pth",
+    "byte_count": 164394834,
+    "sha256": "4aa6f9b16c2b1733f3763034d4751407b429146bae4d51d24b6e71936fa8217e",
+    "serialization": "pytorch_weights_only_state_dict"
+  },
+  "classifier": {
+    "role": "classifier",
+    "filename": "ENN_classifier_sda_epoch_20_0.pth",
+    "byte_count": 3804,
+    "sha256": "476f9723ab4366a3707371cc2145ea8aa7a8fef0f1689f25d840b90fc5352b71",
+    "serialization": "pytorch_weights_only_state_dict"
+  },
+  "input": {
+    "artifact_axes": [
+      "channel",
+      "y",
+      "x"
+    ],
+    "artifact_shape": [
+      3,
+      64,
+      64
+    ],
+    "runtime_axes": [
+      "batch",
+      "channel",
+      "y",
+      "x"
+    ],
+    "runtime_shape": [
+      1,
+      3,
+      64,
+      64
+    ],
+    "dtype": "float32",
+    "value_range": [
+      0.0,
+      1.0
+    ],
+    "channel_semantics": [
+      "stored_array_channel_0",
+      "stored_array_channel_1",
+      "stored_array_channel_2"
+    ],
+    "physical_band_mapping": "unresolved",
+    "upstream_preprocessing": {
+      "evidence_scope": "evaluation_loader_from_serialized_npy",
+      "source_repository": "https://github.com/astrofyz/sda_deeplense",
+      "source_commit": "d5f245c7e169436b83c4ab83e451ad29e52689cb",
+      "source_files": [
+        {
+          "filename": "read_module.py",
+          "sha256": "4e7ea32fb187e58dcbf59946351ce9e27b51c64e90a76dc151fb2603cec62d2d"
+        },
+        {
+          "filename": "preprocess_module.py",
+          "sha256": "377335dceec171b7d24da03247c5af8edce04437e660d542c6b1e16cbeb53291"
+        },
+        {
+          "filename": "model.py",
+          "sha256": "c904ba2171467ba6c93a56688e5a92a274b3ebbf1f5832258966208a0c485ce8"
+        },
+        {
+          "filename": "main.py",
+          "sha256": "18ef79fc09d403cd8a89491d083c81de90d127ef1fedd9a6f974828cf08ca0a7"
+        }
+      ],
+      "evaluation_order": [
+        "load_npy_as_float32",
+        "center_crop_64",
+        "independent_channel_minmax_over_y_x",
+        "nan_to_num_zero",
+        "optional_preprocess_none_identity"
+      ],
+      "execution_log": {
+        "filename": "execution_log_20260917_130238.txt",
+        "sha256": "9c5b89428141edf9ecc7015a84c8706da3e64d7802ef6324a37f9c72bd3fe428",
+        "selected_preprocess_mode": "none",
+        "evidence_purpose": "provenance_only",
+        "runtime_verified": false
+      }
+    },
+    "observation_context": {
+      "survey_release": "HSC-SSP PDR2 Wide",
+      "reported_physical_bands": [
+        "g",
+        "r",
+        "i"
+      ],
+      "source_cutout_shape_yx": [
+        72,
+        72
+      ],
+      "source_cutout_fov_arcsec_approx_yx": [
+        11.5,
+        11.5
+      ],
+      "model_image_shape_yx": [
+        64,
+        64
+      ],
+      "model_image_fov_arcsec_approx_yx": [
+        10.2,
+        10.2
+      ],
+      "evidence_source": "arXiv:2410.01203v1",
+      "serialized_channel_order_proven": false
+    }
+  },
+  "output": {
+    "raw_output": "two_logits",
+    "score_transform": "softmax",
+    "labels_by_index": [
+      "non_lens",
+      "lens"
+    ],
+    "lens_score_index": 1,
+    "score_is_calibrated_probability": false,
+    "decision_threshold": null
+  },
+  "reference_cases": [
+    {
+      "case_id": "hsc-eval-sda-reference-0001",
+      "input_filename": "notsugohi_G-8934-cutout-HSC-G-9366-pdr2_wide.fits.npy",
+      "input_file_sha256": "2c0490ebe76c19363ec31128df62225804eb29ff90f1620c2cd27f6cdd20b551",
+      "input_decoded_sha256": "63d76c317b24aa021e7dd57868f029dd5bf6a8330c5c5d1251f1c38793dd3381",
+      "expected_scores": [
+        0.9614191651344299,
+        0.038580797612667084
+      ],
+      "maximum_absolute_error": 0.000005,
+      "evidence_artifact_sha256": "ac0c323c9815df8f0efe12979165d2d90bbb3809e9d268167d0f06eeb90b7e18",
+      "evidence_artifact_purpose": "provenance_only",
+      "evidence_artifact_runtime_verified": false
+    }
+  ],
+  "execution_scope": "hsc_reference_or_unqualified_dp2_technical_integration",
+  "scientific_use_allowed": false,
+  "dp2_inference_allowed": false,
+  "unresolved_requirements": [
+    "serialized channel-axis mapping to physical HSC g/r/i bands",
+    "pre-serialization creation of the supplied NPY arrays from HSC cutouts",
+    "exact HSC angular pixel grid and an approved HSC-to-Rubin reprojection or resampling policy",
+    "training and Rubin PSF matching, masks, noise, units, calibration, and alignment assumptions",
+    "Rubin DP2 domain compatibility for the HSC-trained checkpoint",
+    "score calibration and scientifically selected candidate threshold",
+    "complete evaluation split provenance and dropped-object behavior",
+    "original training dependency versions"
+  ],
+  "provenance_notes": [
+    "The supplied execution log selects the SDA epoch-20 encoder and classifier for iteration zero.",
+    "Checkpoint tensors directly establish a three-channel 64 by 64 input, a 256-value encoding, and two output logits.",
+    "The stored evaluation payload establishes index zero as non-lens, index one as lens, and softmax scoring.",
+    "The audited upstream evaluation loader establishes float32 NPY loading, CenterCrop(64), independent channel-wise min-max normalization over y and x, nan_to_num with NaN replacement zero, and identity optional preprocessing for mode none.",
+    "The supplied execution log with SHA256 9c5b89428141edf9ecc7015a84c8706da3e64d7802ef6324a37f9c72bd3fe428 records preprocess=none; its identity is retained as provenance and is not verified by the M4 runtime.",
+    "The paper reports HSC-SSP PDR2 Wide g/r/i cutouts of 72 by 72 pixels covering approximately 11.5 arcsec and model images of 64 by 64 pixels covering approximately 10.2 arcsec; it does not establish the serialized channel order.",
+    "The evaluation PKL digest is retained only as provenance and is not loaded or verified by the M4 runtime.",
+    "Reference reproduction is an integration check on supplied HSC-derived arrays, not Rubin DP2 scientific qualification."
+  ]
+}
